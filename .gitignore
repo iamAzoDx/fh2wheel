@@ -1,0 +1,7 @@
+/build/
+/test-runs/
+*.dll
+*.exe
+*.pdb
+*.dmp
+__pycache__/
