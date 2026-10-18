@@ -10,7 +10,9 @@
 #include "targets.h"
 #include "wheel_controller.h"
 
-#define FHW_VERSION 1u
+#define FHW_VERSION_MAJOR 1u
+#define FHW_VERSION_MINOR 1u
+#define FHW_VERSION_SHIFT 16
 #define FHW_ACTIVATION_STEP "activation: IAT slot 141DD1330 hook"
 #define FHW_ADDRESS_DESCRIPTION_CAPACITY 160
 #define FHW_MAX_HEADER_OFFSET 0x1000
@@ -200,7 +202,7 @@ static void fhw_start_game_watch(void)
 
 __declspec(dllexport) unsigned int fh2wheel_version(void)
 {
-    return FHW_VERSION;
+    return (FHW_VERSION_MAJOR << FHW_VERSION_SHIFT) | FHW_VERSION_MINOR;
 }
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
@@ -212,7 +214,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
         fhw_module = instance;
         if (!fhw_log_open())
             return TRUE;
-        fhw_log_format("fh2wheel.dll v%u loaded", FHW_VERSION);
+        fhw_log_format("fh2wheel.dll v%u.%u loaded", FHW_VERSION_MAJOR, FHW_VERSION_MINOR);
         fhw_start_game_watch();
     } else if (reason == DLL_PROCESS_DETACH) {
         fhw_log_close();

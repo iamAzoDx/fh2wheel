@@ -19,7 +19,9 @@ UI_SOURCES := ui/src/config_ui.c ui/src/ui_text.c dll/src/config.c dll/src/log.c
 	dll/src/dinput_state.c
 UI_HEADERS := $(wildcard ui/src/*.h)
 UI_TARGET := $(BUILD_DIR)/fh2wheel-config.exe
-VERSION := $(shell sed -n 's/^\#define FHW_VERSION \([0-9]*\)u$$/\1/p' dll/src/fh2wheel.c)
+VERSION_MAJOR := $(shell sed -n 's/^\#define FHW_VERSION_MAJOR \([0-9]*\)u$$/\1/p' dll/src/fh2wheel.c)
+VERSION_MINOR := $(shell sed -n 's/^\#define FHW_VERSION_MINOR \([0-9]*\)u$$/\1/p' dll/src/fh2wheel.c)
+VERSION := $(VERSION_MAJOR).$(VERSION_MINOR)
 RELEASE_ZIP := $(BUILD_DIR)/fh2wheel-v$(VERSION).zip
 PUBLIC_DIR := $(if $(wildcard public/README.md),public,.)
 PUBLIC_EXPORT_DIR ?= ../fh2-wheel-public
