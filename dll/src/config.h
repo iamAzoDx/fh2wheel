@@ -49,6 +49,22 @@ typedef enum {
 } fhw_button;
 
 typedef enum {
+    FHW_SHIFTER_GEAR_1,
+    FHW_SHIFTER_GEAR_2,
+    FHW_SHIFTER_GEAR_3,
+    FHW_SHIFTER_GEAR_4,
+    FHW_SHIFTER_GEAR_5,
+    FHW_SHIFTER_GEAR_6,
+    FHW_SHIFTER_GEAR_7,
+    FHW_SHIFTER_REVERSE,
+    FHW_SHIFTER_UP,
+    FHW_SHIFTER_DOWN,
+    FHW_SHIFTER_COUNT
+} fhw_shifter_control;
+
+#define FHW_SHIFTER_GEAR_COUNT 7
+
+typedef enum {
     FHW_PEDAL_THROTTLE,
     FHW_PEDAL_BRAKE,
     FHW_PEDAL_CLUTCH,
@@ -68,11 +84,14 @@ typedef struct {
     unsigned int wheel_pid;
     unsigned int pedals_vid;
     unsigned int pedals_pid;
+    unsigned int shifter_vid;
+    unsigned int shifter_pid;
     fhw_axis steering_axis;
     int steering_inverted;
     fhw_pedal_mapping pedals[FHW_PEDAL_COUNT];
     int buttons[FHW_BUTTON_COUNT];
     int dpad_from_hat;
+    int shifter[FHW_SHIFTER_COUNT];
     unsigned int rotation_degrees;
     unsigned int reported_device_id;
     int force_enabled;

@@ -537,7 +537,7 @@ static HRESULT fhw_reading_has_clutch(void *self, unsigned char *present)
 static HRESULT fhw_reading_has_pattern_shifter(void *self, unsigned char *present)
 {
     (void)self;
-    return fhw_reading_flag(present, 0);
+    return fhw_reading_flag(present, fhw_has_pattern_shifter(&fhw_wheel_config));
 }
 
 static HRESULT fhw_reading_max_gear(void *self, unsigned char *gear)
@@ -545,16 +545,15 @@ static HRESULT fhw_reading_max_gear(void *self, unsigned char *gear)
     (void)self;
     if (gear == NULL)
         return E_POINTER;
-    *gear = FHW_MAX_GEAR;
+    *gear = fhw_highest_gear(&fhw_wheel_config);
     return S_OK;
 }
 
 static HRESULT fhw_reading_gear(void *self, unsigned char *gear)
 {
-    (void)self;
     if (gear == NULL)
         return E_POINTER;
-    *gear = FHW_GEAR_NEUTRAL;
+    *gear = ((fhw_reading_object *)self)->input.gear;
     return S_OK;
 }
 

@@ -2,6 +2,21 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2] - 2026-10-18
+
+### Added
+
+- Shifter support, from the wheel base or from a separate USB device (new **Shifter** list in
+  `fh2wheel-config.exe`, `[Shifter]` section and `ShifterVid`/`ShifterPid` in `data\fh2wheel.ini`):
+  - H-pattern: gears 1 to 7 and reverse are sent to the game as a real Xbox One wheel shifter;
+  - sequential: shift up/down buttons act as the right/left paddles, which keep working.
+- The trace log shows the gear and the clutch sent to the game.
+
+### Fixed
+
+- Logitech wheels (G923 and others) report every pedal half-pressed until it is first moved, so the game
+  saw both triggers held and menus could ignore the paddles. A pedal now stays released until it moves.
+
 ## [1.1] - 2026-10-18
 
 ### Fixed

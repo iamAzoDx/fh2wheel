@@ -8,6 +8,7 @@
 #define FHW_HAT_QUARTER 9000ul
 #define FHW_HAT_EIGHTH 4500ul
 #define FHW_BUTTON_PRESSED 0x80
+#define FHW_PEDAL_WAKE_DELTA 0.05f
 
 void fhw_raw_clear(fhw_raw_state *state)
 {
@@ -61,12 +62,61 @@ static float fhw_clamp(float value, float low, float high)
     return value < low ? low : (value > high ? high : value);
 }
 
-void fhw_map_input(const fhw_config *config, const fhw_raw_state *wheel, const fhw_raw_state *pedals,
-                   fhw_wheel_input *input)
+int fhw_has_pattern_shifter(const fhw_config *config)
+{
+    int index;
+
+    for (index = FHW_SHIFTER_GEAR_1; index <= FHW_SHIFTER_REVERSE; index++) {
+        if (config->shifter[index] != FHW_BINDING_NONE)
+            return 1;
+    }
+    return 0;
+}
+
+unsigned char fhw_highest_gear(const fhw_config *config)
+{
+    int index;
+
+    for (index = FHW_SHIFTER_GEAR_COUNT - 1; index >= 0; index--) {
+        if (config->shifter[FHW_SHIFTER_GEAR_1 + index] != FHW_BINDING_NONE)
+            return (unsigned char)(index + 1);
+    }
+    return FHW_SHIFTER_GEAR_COUNT;
+}
+
+static void fhw_map_shifter(const fhw_config *config, const fhw_raw_state *shifter, fhw_wheel_input *input)
+{
+    int index;
+
+    input->shifter = 0;
+    input->gear = FHW_GEAR_NEUTRAL;
+    if (shifter == NULL)
+        return;
+    for (index = 0; index < FHW_SHIFTER_COUNT; index++) {
+        if (fhw_binding_pressed(shifter, config->shifter[index]))
+            input->shifter |= 1u << index;
+    }
+    if ((input->shifter >> FHW_SHIFTER_REVERSE) & 1u) {
+        input->gear = FHW_GEAR_REVERSE;
+    } else {
+        for (index = 0; index < FHW_SHIFTER_GEAR_COUNT && input->gear == FHW_GEAR_NEUTRAL; index++) {
+            if ((input->shifter >> (FHW_SHIFTER_GEAR_1 + index)) & 1u)
+                input->gear = (unsigned char)(index + 1);
+        }
+    }
+    if ((input->shifter >> FHW_SHIFTER_UP) & 1u)
+        input->buttons |= 1u << FHW_BUTTON_PADDLE_RIGHT;
+    if ((input->shifter >> FHW_SHIFTER_DOWN) & 1u)
+        input->buttons |= 1u << FHW_BUTTON_PADDLE_LEFT;
+}
+
+void fhw_map_input(const fhw_config *config, const fhw_raw_sources *sources, fhw_wheel_input *input)
 {
     static const int fhw_hat_dpad[] = {FHW_BINDING_HAT_UP, FHW_BINDING_HAT_DOWN, FHW_BINDING_HAT_LEFT,
                                        FHW_BINDING_HAT_RIGHT};
     static const fhw_button fhw_dpad_buttons[] = {FHW_BUTTON_UP, FHW_BUTTON_DOWN, FHW_BUTTON_LEFT, FHW_BUTTON_RIGHT};
+    const fhw_raw_state *wheel = sources->wheel;
+    const fhw_raw_state *pedals = sources->pedals;
     unsigned int index;
 
     input->steering = 0.0f;
@@ -101,5 +151,29 @@ void fhw_map_input(const fhw_config *config, const fhw_raw_state *wheel, const f
             if (fhw_hat_matches(wheel->hat, fhw_hat_dpad[index]))
                 input->buttons |= 1u << fhw_dpad_buttons[index];
         }
+    }
+    fhw_map_shifter(config, config->shifter_vid != 0 ? sources->shifter : wheel, input);
+}
+
+void fhw_pedal_rest_reset(fhw_pedal_rest *rest)
+{
+    memset(rest, 0, sizeof(*rest));
+}
+
+void fhw_pedal_rest_apply(fhw_pedal_rest *rest, fhw_wheel_input *input)
+{
+    unsigned int index;
+
+    if (!rest->primed) {
+        memcpy(rest->initial, input->pedals, sizeof(rest->initial));
+        rest->primed = 1;
+    }
+    for (index = 0; index < FHW_PEDAL_COUNT; index++) {
+        float change = input->pedals[index] - rest->initial[index];
+
+        if (change > FHW_PEDAL_WAKE_DELTA || change < -FHW_PEDAL_WAKE_DELTA)
+            rest->moved[index] = 1;
+        if (!rest->moved[index])
+            input->pedals[index] = 0.0f;
     }
 }

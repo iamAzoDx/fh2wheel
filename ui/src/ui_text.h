@@ -53,6 +53,10 @@ typedef enum {
     T_SAVED,
     T_SAVE_FAILED,
     T_NO_DIRECTINPUT,
+    T_SHIFTER,
+    T_SHIFTER_SAME,
+    T_SHIFTER_HEADER,
+    T_SHIFTER_PROMPT_FORMAT,
     T_COUNT
 } ui_text_id;
 
@@ -60,6 +64,7 @@ const wchar_t *ui_text(ui_text_id id);
 const wchar_t *ui_axis_label(int row);
 const wchar_t *ui_axis_hint(int row);
 const wchar_t *ui_button_label(fhw_button button);
+const wchar_t *ui_shifter_label(fhw_shifter_control control);
 const wchar_t *ui_axis_name(fhw_axis axis);
 const wchar_t *ui_hat_name(int direction);
 int ui_text_complete(void);

@@ -40,6 +40,12 @@ reads (slot = vtable offset / 8):
 | 30, 31, 32 | H-shifter present, max gear, gear | `sThumbRX` |
 | 33 | 64-bit timestamp | packet number |
 
+Gears: the state function stores slot 32 in `sThumbRX` as is, except `255`, which becomes `-1` (reverse);
+`0` is neutral. The capabilities function (`0x14106c000`) calls slot 30 and, when it reports a shifter,
+stores slot 31 (max gear) in the capabilities' `sThumbRX`. It tests slot 30's answer as a 32-bit value
+on a stack slot that still holds `900`, so a one-byte `false` does not clear it: the game may consider
+an H-shifter present even when none is reported. Not verified in game.
+
 ## Force feedback is programmable
 
 Xbox One wheels run small **text programs**. The game loads them into the wheel (`0x141071850`), then
@@ -80,8 +86,8 @@ program, `L0..L3` shared, `Lt` time in ms, `Et` time since the program was enabl
 1. **Loading** — Azimuth imports `D3DCOMPILER_47.dll`, which is not a KnownDLL. fh2wheel's proxy of that
    file sits next to `azimuth.exe`, forwards all 29 exports (with their ordinals) to the system DLL and
    loads `fh2wheel.dll`.
-2. **Hooking** — when Azimuth loads the game's TLS module, fh2wheel checks the game fingerprint and the
-   expected bytes, then chains the game's import slot for `GetActivationFactoryByPCWSTR`
+2. **Hooking** — a thread waits until Azimuth has mapped the game and loaded its TLS module (no import of
+   `azimuth.exe` is touched), checks the game fingerprint and the expected bytes, then chains the game's import slot for `GetActivationFactoryByPCWSTR`
    (`0x141DD1330`). Other mods hooking the same slot keep working.
 3. **Virtual wheel** — the `Windows.Xbox.Input.Controller` statics are wrapped: `GetControllers` returns
    Azimuth's controllers plus one virtual controller. That controller refuses `IGamepad`, answers the
@@ -89,7 +95,11 @@ program, `L0..L3` shared, `Lt` time in ms, `Et` time since the program was enabl
    and are logged.
 4. **Force feedback** — an interpreter (`dll/src/ffb_vm.c`) runs the game's programs at a fixed rate
    (500 Hz by default). The resulting `Af` drives a DirectInput constant-force effect.
-5. **DirectInput** — the wheel is read with a shared, background access. Forces go through a second,
+5. **Shifter** — gear buttons (from the wheel or a separate shifter device) become slot 32: the first
+   engaged gear, `255` for reverse, `0` when none. Slot 30 reports a shifter once any gear is assigned,
+   and slot 31 the highest assigned gear. Sequential shift up/down buttons are added to the right/left
+   paddles.
+6. **DirectInput** — the wheel is read with a shared, background access. Forces go through a second,
    **exclusive foreground** access tied to the game window: some wheels (the Moza R9 among them) silently
    ignore forces from a background application, and stop the effect without any error when another window
    takes the focus. fh2wheel releases the wheel when the game loses focus, takes it back when it regains

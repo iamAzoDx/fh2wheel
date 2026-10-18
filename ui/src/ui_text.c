@@ -45,7 +45,15 @@ static const wchar_t *const ui_texts[T_COUNT] = {
     [T_SAVED] = L"Saved to data\\fh2wheel.ini. Restart the game to apply.",
     [T_SAVE_FAILED] = L"Could not save data\\fh2wheel.ini.",
     [T_NO_DIRECTINPUT] = L"DirectInput is not available.",
+    [T_SHIFTER] = L"Shifter:",
+    [T_SHIFTER_SAME] = L"On the wheel (same device)",
+    [T_SHIFTER_HEADER] = L"SHIFTER — click “Assign”, then engage the gear or press the button. Shift up/down add to "
+                         L"the paddles.",
+    [T_SHIFTER_PROMPT_FORMAT] = L"%ls: engage the gear or press the shifter button to use…",
 };
+static const wchar_t *const ui_shifter_labels[FHW_SHIFTER_COUNT] = {
+    L"Gear 1", L"Gear 2", L"Gear 3", L"Gear 4", L"Gear 5", L"Gear 6", L"Gear 7", L"Reverse", L"Shift up",
+    L"Shift down"};
 static const wchar_t *const ui_axis_labels[UI_AXIS_ROWS] = {L"Steering", L"Throttle", L"Brake", L"Clutch",
                                                             L"Handbrake"};
 static const wchar_t *const ui_axis_hints[UI_AXIS_ROWS] = {
@@ -76,6 +84,11 @@ const wchar_t *ui_axis_hint(int row)
 const wchar_t *ui_button_label(fhw_button button)
 {
     return (unsigned int)button < FHW_BUTTON_COUNT ? ui_button_labels[button] : L"";
+}
+
+const wchar_t *ui_shifter_label(fhw_shifter_control control)
+{
+    return (unsigned int)control < FHW_SHIFTER_COUNT ? ui_shifter_labels[control] : L"";
 }
 
 const wchar_t *ui_axis_name(fhw_axis axis)

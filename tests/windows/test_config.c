@@ -7,6 +7,8 @@
 #define SAMPLE_INI                                                                                            \
     "[General]\r\nEnabled=1\r\nRotationDegrees=540\r\nTrace=1\r\n"                                            \
     "[Devices]\r\nWheelVid=0x346E\r\nWheelPid=0x0002\r\nPedalsVid=0x1234\r\nPedalsPid=0x5678\r\n"             \
+    "ShifterVid=0x346E\r\nShifterPid=0x1001\r\n"                                                              \
+    "[Shifter]\r\nGear1=21\r\nGear2=22\r\nGear6=26\r\nReverse=27\r\nShiftUp=HatRight\r\nShiftDown=31\r\n"     \
     "[Axes]\r\nSteering=X\r\nSteeringInverted=1\r\nThrottle=Z\r\nThrottleSource=Wheel\r\n"                    \
     "ThrottleInverted=0\r\nBrake=RZ\r\nBrakeSource=Wheel\r\nBrakeInverted=1\r\nClutch=Slider0\r\n"           \
     "ClutchSource=Pedals\r\nClutchInverted=0\r\nHandbrake=None\r\n"                                           \
@@ -56,6 +58,12 @@ static void check_values(const fhw_config *config, const char *stage)
     CHECK(config->buttons[FHW_BUTTON_VIEW] == 24 && config->buttons[FHW_BUTTON_MENU] == 37, "view and menu");
     CHECK(config->buttons[FHW_BUTTON_UP] == FHW_BINDING_HAT_UP, "hat up");
     CHECK(config->dpad_from_hat == 0, "d-pad from hat");
+    CHECK(config->shifter_vid == 0x346E && config->shifter_pid == 0x1001, "shifter device");
+    CHECK(config->shifter[FHW_SHIFTER_GEAR_1] == 21 && config->shifter[FHW_SHIFTER_GEAR_6] == 26, "gears");
+    CHECK(config->shifter[FHW_SHIFTER_GEAR_3] == FHW_BINDING_NONE, "unbound gear");
+    CHECK(config->shifter[FHW_SHIFTER_REVERSE] == 27, "reverse");
+    CHECK(config->shifter[FHW_SHIFTER_UP] == FHW_BINDING_HAT_RIGHT, "shift up on the hat");
+    CHECK(config->shifter[FHW_SHIFTER_DOWN] == 31, "shift down");
     CHECK(config->force_gain_percent == 90 && config->force_inverted == 1, "gain and inversion");
     CHECK(config->force_frequency_hz == 250, "rate");
 #undef CHECK
@@ -70,6 +78,8 @@ static void test_defaults_when_missing(const wchar_t *path)
     expect("missing file is created", GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES);
     expect("default rotation", config.rotation_degrees == 900);
     expect("default rate", config.force_frequency_hz == 500);
+    expect("no shifter by default", config.shifter_vid == 0 && config.shifter[FHW_SHIFTER_GEAR_1] == 0 &&
+                                        config.shifter[FHW_SHIFTER_UP] == 0);
 }
 
 static void test_round_trip(const wchar_t *path)

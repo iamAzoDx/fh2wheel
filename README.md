@@ -74,14 +74,21 @@ Plug in your wheel, keep the game closed, and run **`fh2wheel-config.exe`**.
    must fill up when you press its pedal.
 4. **Buttons**: for each Xbox control (A, B, X, Y, View, Menu, D-pad, paddles), click **Assign** and press
    the wheel button you want. A ● appears next to a control while its button is pressed.
-5. **Force feedback**: click **Test: push right**. The wheel must turn to the right. If it turns to the
+5. **Shifter** (optional): if you have a shifter, pick it under **Shifter** when it is a separate USB
+   device, or leave “On the wheel” when it is plugged into the wheel base.
+   - **H-pattern**: click **Assign** next to each gear (1 to 7, Reverse), then engage that gear. Gears you
+     do not assign are simply unused. No gear engaged = neutral. In the game, pick a **manual with
+     clutch** transmission.
+   - **Sequential**: assign **Shift up** and **Shift down**. They act like the right and left paddles, and
+     the paddles keep working.
+6. **Force feedback**: click **Test: push right**. The wheel must turn to the right. If it turns to the
    left, tick **Invert force** and test again.
-6. Click **Save**. The settings go to `data\fh2wheel.ini`.
+7. Click **Save**. The settings go to `data\fh2wheel.ini`.
 
 ### Step 3 — Play
 
-Start the game the usual way (`azimuth.exe`, or `FH2 DLC Launcher.exe` if you use the Storm Island
-mod). Turn off your Xbox controller first, otherwise the game may use it instead of the wheel.
+Start the game with `azimuth.exe` (the FH2 DLC Launcher also works, but not together with FH2 Extra
+Options 0.2.88 or later). Turn off your Xbox controller first, otherwise the game may use it instead of the wheel.
 
 **Keep the game window focused.** Windows only lets the focused application drive the wheel motor. When
 you come back to the game after using another window, force feedback resumes within a second.
@@ -112,6 +119,7 @@ the wheel feels heavy or slow to return to the center.
 | The game does not react to the wheel | The wheel must be plugged in **before** starting the game. Check that `data\logs\fh2wheel.log` exists and lists your wheel. |
 | No force feedback | Run `fh2wheel-config.exe` with the game closed and use the force tests. Keep the game window focused while playing. |
 | Wrong buttons or inverted pedals | Run `fh2wheel-config.exe` again and use **Detect** / **Assign**. |
+| The H-pattern shifter does nothing | Pick a manual transmission with clutch in the game options. With trace on, the log's `loop:` lines show the gear fh2wheel sends (`gear 255` = reverse). |
 | Something else | Tick **Detailed log (trace)**, save, play for a minute, then open an issue with `data\logs\fh2wheel.log`. |
 
 `fh2wheel-probe.exe` (console) helps with diagnosis:

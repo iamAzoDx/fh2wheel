@@ -18,6 +18,7 @@
 #define FHW_SECTION_AXES L"Axes"
 #define FHW_SECTION_BUTTONS L"Buttons"
 #define FHW_SECTION_FORCE L"ForceFeedback"
+#define FHW_SECTION_SHIFTER L"Shifter"
 #define FHW_SOURCE_PEDALS_VALUE L"Pedals"
 #define FHW_SOURCE_WHEEL_VALUE L"Wheel"
 
@@ -34,6 +35,8 @@ static const fhw_setting fhw_wheel_vid_setting = {FHW_SECTION_DEVICES, L"WheelVi
 static const fhw_setting fhw_wheel_pid_setting = {FHW_SECTION_DEVICES, L"WheelPid"};
 static const fhw_setting fhw_pedals_vid_setting = {FHW_SECTION_DEVICES, L"PedalsVid"};
 static const fhw_setting fhw_pedals_pid_setting = {FHW_SECTION_DEVICES, L"PedalsPid"};
+static const fhw_setting fhw_shifter_vid_setting = {FHW_SECTION_DEVICES, L"ShifterVid"};
+static const fhw_setting fhw_shifter_pid_setting = {FHW_SECTION_DEVICES, L"ShifterPid"};
 static const fhw_setting fhw_steering_setting = {FHW_SECTION_AXES, L"Steering"};
 static const fhw_setting fhw_steering_inverted_setting = {FHW_SECTION_AXES, L"SteeringInverted"};
 static const fhw_setting fhw_pedal_settings[FHW_PEDAL_COUNT] = {
@@ -51,6 +54,11 @@ static const fhw_setting fhw_button_settings[FHW_BUTTON_COUNT] = {
     {FHW_SECTION_BUTTONS, L"DpadUp"},     {FHW_SECTION_BUTTONS, L"DpadDown"},   {FHW_SECTION_BUTTONS, L"DpadLeft"},
     {FHW_SECTION_BUTTONS, L"DpadRight"},  {FHW_SECTION_BUTTONS, L"LeftPaddle"}, {FHW_SECTION_BUTTONS, L"RightPaddle"}};
 static const fhw_setting fhw_dpad_hat_setting = {FHW_SECTION_BUTTONS, L"DpadFromHat"};
+static const fhw_setting fhw_shifter_settings[FHW_SHIFTER_COUNT] = {
+    {FHW_SECTION_SHIFTER, L"Gear1"},   {FHW_SECTION_SHIFTER, L"Gear2"},   {FHW_SECTION_SHIFTER, L"Gear3"},
+    {FHW_SECTION_SHIFTER, L"Gear4"},   {FHW_SECTION_SHIFTER, L"Gear5"},   {FHW_SECTION_SHIFTER, L"Gear6"},
+    {FHW_SECTION_SHIFTER, L"Gear7"},   {FHW_SECTION_SHIFTER, L"Reverse"}, {FHW_SECTION_SHIFTER, L"ShiftUp"},
+    {FHW_SECTION_SHIFTER, L"ShiftDown"}};
 static const fhw_setting fhw_force_enabled_setting = {FHW_SECTION_FORCE, L"Enabled"};
 static const fhw_setting fhw_gain_setting = {FHW_SECTION_FORCE, L"GainPercent"};
 static const fhw_setting fhw_force_inverted_setting = {FHW_SECTION_FORCE, L"Inverted"};
@@ -205,6 +213,8 @@ int fhw_config_save(const fhw_config *config)
     ok &= fhw_write_number(path, &fhw_wheel_pid_setting, config->wheel_pid, 1);
     ok &= fhw_write_number(path, &fhw_pedals_vid_setting, config->pedals_vid, 1);
     ok &= fhw_write_number(path, &fhw_pedals_pid_setting, config->pedals_pid, 1);
+    ok &= fhw_write_number(path, &fhw_shifter_vid_setting, config->shifter_vid, 1);
+    ok &= fhw_write_number(path, &fhw_shifter_pid_setting, config->shifter_pid, 1);
     ok &= fhw_write_text(path, &fhw_steering_setting, fhw_axis_values[config->steering_axis]);
     ok &= fhw_write_number(path, &fhw_steering_inverted_setting, (unsigned int)config->steering_inverted, 0);
     for (index = 0; index < FHW_PEDAL_COUNT; index++) {
@@ -220,6 +230,10 @@ int fhw_config_save(const fhw_config *config)
         ok &= fhw_write_text(path, &fhw_button_settings[index], text);
     }
     ok &= fhw_write_number(path, &fhw_dpad_hat_setting, (unsigned int)config->dpad_from_hat, 0);
+    for (index = 0; index < FHW_SHIFTER_COUNT; index++) {
+        fhw_binding_text(config->shifter[index], text, FHW_VALUE_CAPACITY);
+        ok &= fhw_write_text(path, &fhw_shifter_settings[index], text);
+    }
     ok &= fhw_write_number(path, &fhw_force_enabled_setting, (unsigned int)config->force_enabled, 0);
     ok &= fhw_write_number(path, &fhw_gain_setting, (unsigned int)config->force_gain_percent, 0);
     ok &= fhw_write_number(path, &fhw_force_inverted_setting, (unsigned int)config->force_inverted, 0);
@@ -254,6 +268,8 @@ void fhw_config_load(fhw_config *config)
     config->wheel_pid = fhw_read_number(path, &fhw_wheel_pid_setting, FHW_DEFAULT_WHEEL_PID);
     config->pedals_vid = fhw_read_number(path, &fhw_pedals_vid_setting, 0);
     config->pedals_pid = fhw_read_number(path, &fhw_pedals_pid_setting, 0);
+    config->shifter_vid = fhw_read_number(path, &fhw_shifter_vid_setting, 0);
+    config->shifter_pid = fhw_read_number(path, &fhw_shifter_pid_setting, 0);
 
     config->steering_axis = fhw_read_axis(path, &fhw_steering_setting, FHW_AXIS_X);
     config->steering_inverted = fhw_read_number(path, &fhw_steering_inverted_setting, 0) != 0;
@@ -271,6 +287,8 @@ void fhw_config_load(fhw_config *config)
     for (index = 0; index < FHW_BUTTON_COUNT; index++)
         config->buttons[index] = fhw_read_binding(path, &fhw_button_settings[index], fhw_default_buttons[index]);
     config->dpad_from_hat = fhw_read_number(path, &fhw_dpad_hat_setting, 1) != 0;
+    for (index = 0; index < FHW_SHIFTER_COUNT; index++)
+        config->shifter[index] = fhw_read_binding(path, &fhw_shifter_settings[index], FHW_BINDING_NONE);
 
     config->force_enabled = fhw_read_number(path, &fhw_force_enabled_setting, 1) != 0;
     config->force_gain_percent =
@@ -281,10 +299,10 @@ void fhw_config_load(fhw_config *config)
         (unsigned int)fhw_clamp((int)fhw_read_number(path, &fhw_frequency_setting, FHW_DEFAULT_FREQUENCY_HZ),
                                 (int)FHW_MIN_FREQUENCY_HZ, (int)FHW_MAX_FREQUENCY_HZ);
 
-    fhw_log_format("configuration -- OK (enabled %d, wheel %04X:%04X, pedals %04X:%04X, rotation %u, "
-                   "steering %s%s, force %d gain %d%% inverted %d %u Hz, trace %d)",
+    fhw_log_format("configuration -- OK (enabled %d, wheel %04X:%04X, pedals %04X:%04X, shifter %04X:%04X, "
+                   "rotation %u, steering %s%s, force %d gain %d%% inverted %d %u Hz, trace %d)",
                    config->enabled, config->wheel_vid, config->wheel_pid, config->pedals_vid, config->pedals_pid,
-                   config->rotation_degrees, fhw_axis_name(config->steering_axis),
+                   config->shifter_vid, config->shifter_pid, config->rotation_degrees, fhw_axis_name(config->steering_axis),
                    config->steering_inverted ? " inverted" : "", config->force_enabled, config->force_gain_percent,
                    config->force_inverted, config->force_frequency_hz, config->trace);
 }
