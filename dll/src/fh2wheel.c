@@ -15,51 +15,79 @@
 #define FHW_ADDRESS_DESCRIPTION_CAPACITY 160
 #define FHW_MAX_HEADER_OFFSET 0x1000
 
-typedef HMODULE(WINAPI *fhw_load_library_ex_w)(LPCWSTR, HANDLE, DWORD);
+typedef enum {
+    FHW_GAME_ABSENT,
+    FHW_GAME_FOREIGN,
+    FHW_GAME_INCOMPLETE,
+    FHW_GAME_LOADING,
+    FHW_GAME_READY
+} fhw_game_state;
 
 static const unsigned char fhw_expected_thunk[] = FHW_ACTIVATION_THUNK_BYTES;
-static void *volatile fhw_next_load_library_ex_w = NULL;
 static void *volatile fhw_next_activation = NULL;
-static LONG fhw_trigger_fired = 0;
 static HINSTANCE fhw_module = NULL;
 static fhw_config fhw_settings;
 
-static int fhw_path_has_suffix(const wchar_t *path, const wchar_t *suffix)
+static void **fhw_activation_slot(void)
 {
-    int path_length;
-    int suffix_length;
-
-    if (path == NULL)
-        return 0;
-    path_length = lstrlenW(path);
-    suffix_length = lstrlenW(suffix);
-    if (suffix_length > path_length)
-        return 0;
-    return CompareStringOrdinal(path + path_length - suffix_length, suffix_length, suffix, suffix_length, TRUE) ==
-           CSTR_EQUAL;
+    return (void **)(UINT_PTR)FHW_ACTIVATION_FACTORY_IAT_SLOT;
 }
 
-static int fhw_game_matches(void)
+static const IMAGE_NT_HEADERS64 *fhw_game_headers(void)
 {
     const unsigned char *base = (const unsigned char *)(UINT_PTR)FHW_GAME_PREFERRED_BASE;
     const IMAGE_DOS_HEADER *dos = (const IMAGE_DOS_HEADER *)base;
     const IMAGE_NT_HEADERS64 *nt;
 
     if (!fhw_range_is_readable(base, sizeof(*dos)) || dos->e_magic != IMAGE_DOS_SIGNATURE)
-        return 0;
+        return NULL;
     if (dos->e_lfanew <= 0 || dos->e_lfanew > FHW_MAX_HEADER_OFFSET)
-        return 0;
+        return NULL;
     nt = (const IMAGE_NT_HEADERS64 *)(base + dos->e_lfanew);
     if (!fhw_range_is_readable(nt, sizeof(*nt)) || nt->Signature != IMAGE_NT_SIGNATURE)
-        return 0;
+        return NULL;
+    return nt;
+}
+
+static int fhw_thunk_matches(void)
+{
+    const unsigned char *thunk = (const unsigned char *)(UINT_PTR)FHW_ACTIVATION_THUNK;
+
+    return fhw_range_is_readable(thunk, sizeof(fhw_expected_thunk)) &&
+           memcmp(thunk, fhw_expected_thunk, sizeof(fhw_expected_thunk)) == 0;
+}
+
+static fhw_game_state fhw_game_state_now(void)
+{
+    const IMAGE_NT_HEADERS64 *nt = fhw_game_headers();
+
+    if (nt == NULL)
+        return FHW_GAME_ABSENT;
     if (nt->FileHeader.TimeDateStamp != FHW_GAME_TIMESTAMP ||
-        nt->OptionalHeader.SizeOfImage != FHW_GAME_SIZE_OF_IMAGE) {
+        nt->OptionalHeader.SizeOfImage != FHW_GAME_SIZE_OF_IMAGE)
+        return FHW_GAME_FOREIGN;
+    if (!fhw_thunk_matches() || !fhw_range_is_readable(fhw_activation_slot(), sizeof(void *)))
+        return FHW_GAME_INCOMPLETE;
+    if (GetModuleHandleW(FHW_TLS_MODULE_W) == NULL)
+        return FHW_GAME_LOADING;
+    return FHW_GAME_READY;
+}
+
+static void fhw_log_game_not_ready(fhw_game_state state)
+{
+    const IMAGE_NT_HEADERS64 *nt = fhw_game_headers();
+
+    if (state == FHW_GAME_FOREIGN && nt != NULL)
         fhw_log_format("game -- SKIPPED -- unexpected fingerprint (timestamp %08lX, SizeOfImage %08lX)",
                        (unsigned long)nt->FileHeader.TimeDateStamp, (unsigned long)nt->OptionalHeader.SizeOfImage);
-        return 0;
-    }
-    fhw_log_format("game -- OK (timestamp %08X, SizeOfImage %08X)", FHW_GAME_TIMESTAMP, FHW_GAME_SIZE_OF_IMAGE);
-    return 1;
+    else if (state == FHW_GAME_INCOMPLETE)
+        fhw_log_step_skipped(FHW_ACTIVATION_STEP, "unexpected bytes at thunk 140EDA1FA or IAT slot unreadable");
+    else if (state == FHW_GAME_LOADING)
+        fhw_log_format("game -- SKIPPED -- %ls never loaded after %lu ms", FHW_TLS_MODULE_W,
+                       (unsigned long)FHW_GAME_WAIT_LIMIT_MS);
+    else
+        fhw_log_format("game -- SKIPPED -- not mapped at %016llX after %lu ms",
+                       (unsigned long long)FHW_GAME_PREFERRED_BASE, (unsigned long)FHW_GAME_WAIT_LIMIT_MS);
 }
 
 static long fhw_hooked_activation(const void *class_name, const void *interface_id, void **factory)
@@ -81,11 +109,6 @@ static long fhw_activation_passthrough(const void *class_name, const void *inter
     return next(class_name, interface_id, factory);
 }
 
-static void **fhw_activation_slot(void)
-{
-    return (void **)(UINT_PTR)FHW_ACTIVATION_FACTORY_IAT_SLOT;
-}
-
 static int fhw_slot_is_resolved(void)
 {
     return fhw_region_is_executable(*(void *volatile *)fhw_activation_slot());
@@ -104,95 +127,75 @@ static void fhw_chain_activation(DWORD waited_ms)
                    (unsigned long long)(UINT_PTR)fhw_next_activation, owner, (unsigned long)waited_ms);
 }
 
-static DWORD WINAPI fhw_wait_for_slot(LPVOID parameter)
+static int fhw_wait_for_game(DWORD *waited_ms)
+{
+    DWORD started = GetTickCount();
+    fhw_game_state state = fhw_game_state_now();
+
+    *waited_ms = 0;
+    while (state != FHW_GAME_READY && *waited_ms <= FHW_GAME_WAIT_LIMIT_MS) {
+        Sleep(FHW_GAME_POLL_INTERVAL_MS);
+        *waited_ms = GetTickCount() - started;
+        state = fhw_game_state_now();
+    }
+    if (state != FHW_GAME_READY) {
+        fhw_log_game_not_ready(state);
+        return 0;
+    }
+    fhw_log_format("game -- OK (timestamp %08X, SizeOfImage %08X, mapped after %lu ms)", FHW_GAME_TIMESTAMP,
+                   FHW_GAME_SIZE_OF_IMAGE, (unsigned long)*waited_ms);
+    return 1;
+}
+
+static void fhw_wait_for_slot(void)
 {
     DWORD started = GetTickCount();
     DWORD waited = 0;
 
-    (void)parameter;
     while (waited <= FHW_SLOT_WAIT_LIMIT_MS) {
         if (fhw_slot_is_resolved()) {
             fhw_chain_activation(waited);
-            return 0;
+            return;
         }
         Sleep(FHW_SLOT_POLL_INTERVAL_MS);
         waited = GetTickCount() - started;
     }
     fhw_log_format("%s -- SKIPPED -- slot still unresolved after %lu ms", FHW_ACTIVATION_STEP,
                    (unsigned long)FHW_SLOT_WAIT_LIMIT_MS);
-    return 0;
 }
 
-static void fhw_install_activation_hook(void)
+static DWORD WINAPI fhw_watch_game(LPVOID parameter)
 {
-    const unsigned char *thunk = (const unsigned char *)(UINT_PTR)FHW_ACTIVATION_THUNK;
-    HANDLE watcher;
+    DWORD waited;
 
-    if (!fhw_range_is_readable(thunk, sizeof(fhw_expected_thunk)) ||
-        memcmp(thunk, fhw_expected_thunk, sizeof(fhw_expected_thunk)) != 0) {
-        fhw_log_step_skipped(FHW_ACTIVATION_STEP, "unexpected bytes at thunk 140EDA1FA");
-        return;
+    (void)parameter;
+    if (!fhw_wait_for_game(&waited)) {
+        fhw_log_step_skipped("wheel", "game not recognised: no hook installed");
+        return 0;
     }
-    if (!fhw_range_is_readable(fhw_activation_slot(), sizeof(void *))) {
-        fhw_log_step_skipped(FHW_ACTIVATION_STEP, "IAT slot unreadable");
-        return;
-    }
-    if (fhw_slot_is_resolved()) {
-        fhw_chain_activation(0);
-        return;
-    }
-    watcher = CreateThread(NULL, 0, fhw_wait_for_slot, NULL, 0, NULL);
-    if (watcher == NULL) {
-        fhw_log_step_skipped(FHW_ACTIVATION_STEP, "cannot create the wait thread");
-        return;
-    }
-    CloseHandle(watcher);
-}
-
-static void fhw_fire_trigger(const wchar_t *module_path)
-{
-    if (InterlockedCompareExchange(&fhw_trigger_fired, 1, 0) != 0)
-        return;
-    fhw_log_format("trigger -- OK (%ls)", module_path);
     fhw_config_load(&fhw_settings);
     if (!fhw_settings.enabled) {
         fhw_log_step_skipped("wheel", "disabled in the configuration");
-        return;
-    }
-    if (!fhw_game_matches()) {
-        fhw_log_step_skipped("wheel", "game not recognised: no hook installed");
-        return;
+        return 0;
     }
     fhw_force_start(&fhw_settings, fhw_module);
     fhw_statics_init(fhw_activation_passthrough);
     fhw_wheel_init(&fhw_settings, fhw_statics_user_provider());
-    fhw_install_activation_hook();
+    fhw_wait_for_slot();
+    return 0;
 }
 
-static HMODULE WINAPI fhw_hooked_load_library_ex_w(LPCWSTR name, HANDLE file, DWORD flags)
+static void fhw_start_game_watch(void)
 {
-    fhw_load_library_ex_w next = (fhw_load_library_ex_w)fhw_next_load_library_ex_w;
-    HMODULE loaded = next(name, file, flags);
+    HANDLE watcher = CreateThread(NULL, 0, fhw_watch_game, NULL, 0, NULL);
 
-    if (loaded != NULL && fhw_path_has_suffix(name, FHW_TLS_MODULE_SUFFIX_W))
-        fhw_fire_trigger(name);
-    return loaded;
-}
-
-static void fhw_install_trigger(void)
-{
-    void **slot = fhw_find_iat_slot(GetModuleHandleW(NULL), FHW_LOADER_DLL, FHW_LOADER_FUNCTION);
-
-    if (slot == NULL) {
-        fhw_log_step_skipped("trigger: hook of " FHW_LOADER_FUNCTION, "IAT slot not found in the host executable");
+    if (watcher == NULL) {
+        fhw_log_step_skipped("game watch", "cannot create the wait thread");
         return;
     }
-    if (!fhw_chain_iat_slot(slot, (void *)fhw_hooked_load_library_ex_w, &fhw_next_load_library_ex_w)) {
-        fhw_log_step_skipped("trigger: hook of " FHW_LOADER_FUNCTION, "IAT slot not writable");
-        return;
-    }
-    fhw_log_format("trigger: hook of %s -- OK (chained to %016llX, waiting for %ls)", FHW_LOADER_FUNCTION,
-                   (unsigned long long)(UINT_PTR)fhw_next_load_library_ex_w, FHW_TLS_MODULE_SUFFIX_W);
+    CloseHandle(watcher);
+    fhw_log_format("game watch -- OK (waiting for FH2 at %016llX and %ls, no host import touched)",
+                   (unsigned long long)FHW_GAME_PREFERRED_BASE, FHW_TLS_MODULE_W);
 }
 
 __declspec(dllexport) unsigned int fh2wheel_version(void)
@@ -210,7 +213,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
         if (!fhw_log_open())
             return TRUE;
         fhw_log_format("fh2wheel.dll v%u loaded", FHW_VERSION);
-        fhw_install_trigger();
+        fhw_start_game_watch();
     } else if (reason == DLL_PROCESS_DETACH) {
         fhw_log_close();
     }

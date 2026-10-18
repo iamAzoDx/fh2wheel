@@ -25,11 +25,14 @@ obtained copy of the game.
 
 ### What you need
 
-- **Azimuth 0.9.9** with **Forza Horizon 2 1.0.0.64** already installed and running correctly. fh2wheel
+- **Azimuth 0.9.9 or 0.9.10** with **Forza Horizon 2 1.0.0.64** already installed and running correctly. fh2wheel
   does not provide the game or the emulator.
 - Nothing else. fh2core / the FH2 DLC Launcher (Storm Island) is **not** required: fh2wheel works when
   the game is started with `azimuth.exe` directly, and also alongside fh2core. It has been tested with the
-  FH2 ExtraOptions mod installed; it is designed to work without it too, but that has not been tested
+  FH2 ExtraOptions mod 0.2.68 (Azimuth 0.9.9) and 0.2.98 (Azimuth 0.9.10). ExtraOptions 0.2.88 and later
+  refuse to start when another mod hooks Azimuth's `LoadLibraryExW` import: fh2wheel no longer does, but
+  the FH2 DLC Launcher (fh2core) does, so start the game with `azimuth.exe` directly (ExtraOptions unlocks
+  the DLC itself). fh2wheel is designed to work without ExtraOptions too, but that has not been tested
   yet.
 - A **racing wheel** that works in other PC games, with its driver and software installed (Moza Pit
   House, Logitech G HUB, Thrustmaster drivers…).
