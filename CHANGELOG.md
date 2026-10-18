@@ -2,6 +2,18 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4] - 2026-10-18
+
+### Changed
+
+- New look for `fh2wheel-config.exe`: dark theme and a **Live preview** panel with a wheel that turns with
+  yours, the pedals, the engaged gear and the Xbox buttons lighting up as you press them.
+
+### Fixed
+
+- `fh2wheel-config.exe` releases the wheel after each force test instead of keeping it until it is
+  closed.
+
 ## [1.3] - 2026-10-18
 
 ### Added

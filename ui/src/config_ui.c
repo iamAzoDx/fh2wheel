@@ -2,12 +2,15 @@
 #include "dinput_state.h"
 
 #include <commctrl.h>
+#include <dwmapi.h>
 #include <stdio.h>
 
 #include "config.h"
 #include "device_lists.h"
 #include "input_mapping.h"
+#include "preview.h"
 #include "ui_text.h"
+#include "ui_theme.h"
 
 #define UI_WINDOW_CLASS L"fh2wheel-configuration"
 #define UI_DEVICE_CAPACITY UI_DEVICE_LIST_CAPACITY
@@ -27,8 +30,14 @@
 #define UI_CONTENT_TOP 112
 #define UI_FORCE_TOP (UI_CONTENT_TOP + 618)
 #define UI_PRESSED_MARK L"  ●"
-#define UI_WIDTH 760
+#define UI_FORM_WIDTH 760
+#define UI_PREVIEW_WIDTH 336
+#define UI_MARGIN 12
+#define UI_WIDTH (UI_FORM_WIDTH + UI_PREVIEW_WIDTH + UI_MARGIN)
 #define UI_HEIGHT 900
+#define UI_HEADER_COUNT 4
+#define UI_BUTTON_CORNER 8
+#define UI_DARK_TITLE_ATTRIBUTE 20
 
 #define ID_WHEEL 100
 #define ID_PEDALS 101
@@ -72,7 +81,13 @@ typedef struct {
 
 static HINSTANCE ui_instance;
 static HWND ui_window;
+static HWND ui_preview;
 static HFONT ui_font;
+static HFONT ui_header_font;
+static HBRUSH ui_background_brush;
+static HBRUSH ui_card_brush;
+static HWND ui_headers[UI_HEADER_COUNT];
+static int ui_header_count = 0;
 static const int ui_role_ids[UI_ROLE_COUNT] = {ID_WHEEL, ID_PEDALS, ID_SHIFTER, ID_HANDBRAKE};
 static const ui_text_id ui_role_none_texts[UI_ROLE_COUNT] = {T_COUNT, T_PEDALS_NONE, T_SHIFTER_SAME,
                                                              T_HANDBRAKE_NONE};
@@ -112,12 +127,20 @@ static void ui_set_status(const wchar_t *text)
     SetWindowTextW(ui_status, text);
 }
 
+static int ui_is_push_button(const wchar_t *type, DWORD style)
+{
+    return lstrcmpW(type, L"BUTTON") == 0 && (style & BS_TYPEMASK) <= BS_DEFPUSHBUTTON;
+}
+
 static HWND ui_control(const wchar_t *type, const wchar_t *text, DWORD style, int x, int y, int width, int height,
                        int id)
 {
-    HWND control = CreateWindowExW(0, type, text, WS_CHILD | WS_VISIBLE | style, x, y, width, height, ui_window,
-                                   (HMENU)(INT_PTR)id, ui_instance, NULL);
+    HWND control;
 
+    if (ui_is_push_button(type, style))
+        style = (style & ~BS_TYPEMASK) | BS_OWNERDRAW;
+    control = CreateWindowExW(0, type, text, WS_CHILD | WS_VISIBLE | style, x, y, width, height, ui_window,
+                              (HMENU)(INT_PTR)id, ui_instance, NULL);
     SendMessageW(control, WM_SETFONT, (WPARAM)ui_font, TRUE);
     return control;
 }
@@ -125,6 +148,73 @@ static HWND ui_control(const wchar_t *type, const wchar_t *text, DWORD style, in
 static HWND ui_label(const wchar_t *text, int x, int y, int width)
 {
     return ui_control(L"STATIC", text, 0, x, y + 3, width, 18, 0);
+}
+
+static void ui_header(const wchar_t *text, int x, int y, int width)
+{
+    HWND header = ui_label(text, x, y, width);
+
+    SendMessageW(header, WM_SETFONT, (WPARAM)ui_header_font, TRUE);
+    if (ui_header_count < UI_HEADER_COUNT)
+        ui_headers[ui_header_count++] = header;
+}
+
+static int ui_is_header(HWND control)
+{
+    int index;
+
+    for (index = 0; index < ui_header_count; index++) {
+        if (ui_headers[index] == control)
+            return 1;
+    }
+    return 0;
+}
+
+static void ui_draw_button(const DRAWITEMSTRUCT *item)
+{
+    wchar_t text[UI_TEXT_CAPACITY];
+    int pressed = (item->itemState & ODS_SELECTED) != 0;
+    int primary = item->CtlID == ID_SAVE;
+    COLORREF fill = primary ? (pressed ? UI_COLOR_ACCENT_PRESSED : UI_COLOR_ACCENT)
+                            : (pressed ? UI_COLOR_CARD_HOVER : UI_COLOR_CARD);
+    HBRUSH background = ui_background_brush;
+    HBRUSH brush = CreateSolidBrush(fill);
+    HPEN pen = CreatePen(PS_SOLID, 1, primary ? fill : UI_COLOR_BORDER);
+    HGDIOBJ old_brush;
+    HGDIOBJ old_pen;
+    RECT box = item->rcItem;
+
+    FillRect(item->hDC, &box, background);
+    old_brush = SelectObject(item->hDC, brush);
+    old_pen = SelectObject(item->hDC, pen);
+    RoundRect(item->hDC, box.left, box.top, box.right, box.bottom, UI_BUTTON_CORNER, UI_BUTTON_CORNER);
+    SelectObject(item->hDC, old_brush);
+    SelectObject(item->hDC, old_pen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+
+    GetWindowTextW(item->hwndItem, text, UI_TEXT_CAPACITY);
+    SetBkMode(item->hDC, TRANSPARENT);
+    SetTextColor(item->hDC, UI_COLOR_TEXT);
+    DrawTextW(item->hDC, text, -1, &box, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    if (item->itemState & ODS_FOCUS) {
+        InflateRect(&box, -3, -3);
+        DrawFocusRect(item->hDC, &box);
+    }
+}
+
+static LRESULT ui_color_static(HDC dc, HWND control)
+{
+    SetTextColor(dc, ui_is_header(control) ? UI_COLOR_ACCENT : (control == ui_status ? UI_COLOR_MUTED : UI_COLOR_TEXT));
+    SetBkColor(dc, UI_COLOR_BACKGROUND);
+    return (LRESULT)ui_background_brush;
+}
+
+static LRESULT ui_color_field(HDC dc)
+{
+    SetTextColor(dc, UI_COLOR_TEXT);
+    SetBkColor(dc, UI_COLOR_CARD);
+    return (LRESULT)ui_card_brush;
 }
 
 static BOOL CALLBACK ui_collect_device(LPCDIDEVICEINSTANCEW instance, LPVOID context)
@@ -607,6 +697,21 @@ static void ui_detect_button(void)
     ui_set_status(text);
 }
 
+static void ui_show_preview(const fhw_wheel_input *mapped, int connected)
+{
+    ui_preview_state state;
+    int wheel = ui_selected[UI_ROLE_WHEEL];
+
+    ZeroMemory(&state, sizeof(state));
+    state.input = *mapped;
+    state.rotation_degrees = (unsigned int)ui_read_number(ID_ROTATION, (int)ui_config.rotation_degrees);
+    state.has_pattern_shifter = fhw_has_pattern_shifter(&ui_config);
+    state.connected = connected && wheel != UI_NO_DEVICE;
+    if (state.connected)
+        lstrcpynW(state.device_name, ui_devices[wheel].name, UI_PREVIEW_NAME_CAPACITY);
+    ui_preview_update(ui_preview, &state);
+}
+
 static void ui_tick(void)
 {
     fhw_wheel_input mapped;
@@ -640,6 +745,7 @@ static void ui_tick(void)
         SendMessageW(ui_axis_bar[row], PBM_SETPOS, (WPARAM)(mapped.pedals[row - 1] * UI_PROGRESS_MAX), 0);
     ui_refresh_button_texts(mapped.buttons);
     ui_refresh_shifter_texts(mapped.shifter);
+    ui_show_preview(&mapped, wheel_ok);
 }
 
 static HRESULT ui_set_force(float level)
@@ -697,19 +803,21 @@ static void ui_build(void)
     ui_device_combo[UI_ROLE_HANDBRAKE] =
         ui_control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 458, 76, 280, 300, ID_HANDBRAKE);
 
-    ui_label(ui_text(T_AXES_HEADER), 12, UI_CONTENT_TOP, 720);
+    ui_header(ui_text(T_AXES_HEADER), 12, UI_CONTENT_TOP, 720);
     for (row = 0; row < UI_AXIS_ROWS; row++) {
         y = UI_CONTENT_TOP + 26 + row * 32;
         ui_label(ui_axis_label(row), 12, y, 110);
         ui_axis_mapping[row] = ui_label(L"", 125, y, 150);
         ui_axis_bar[row] = ui_control(PROGRESS_CLASSW, L"", PBS_SMOOTH, 280, y + 2, 250, 20, 0);
         SendMessageW(ui_axis_bar[row], PBM_SETRANGE32, 0, UI_PROGRESS_MAX);
+        SendMessageW(ui_axis_bar[row], PBM_SETBARCOLOR, 0, (LPARAM)UI_COLOR_ACCENT);
+        SendMessageW(ui_axis_bar[row], PBM_SETBKCOLOR, 0, (LPARAM)UI_COLOR_TRACK);
         ui_control(L"BUTTON", ui_text(T_DETECT), BS_PUSHBUTTON, 545, y, 85, 26, ID_AXIS_DETECT + row);
         ui_axis_invert[row] = ui_control(L"BUTTON", ui_text(T_INVERT), BS_AUTOCHECKBOX, 645, y + 3, 90, 20,
                                          ID_AXIS_INVERT + row);
     }
 
-    ui_label(ui_text(T_BUTTONS_HEADER), 12, UI_CONTENT_TOP + 196, 720);
+    ui_header(ui_text(T_BUTTONS_HEADER), 12, UI_CONTENT_TOP + 196, 720);
     for (row = 0; row < FHW_BUTTON_COUNT; row++) {
         int column = row / UI_BUTTON_ROWS;
         int x = 12 + column * 375;
@@ -722,7 +830,7 @@ static void ui_build(void)
     }
     ui_control(L"BUTTON", ui_text(T_DPAD_HAT), BS_AUTOCHECKBOX, 12, UI_CONTENT_TOP + 404, 400, 20, ID_DPAD_HAT);
 
-    ui_label(ui_text(T_SHIFTER_HEADER), 12, UI_CONTENT_TOP + 438, 730);
+    ui_header(ui_text(T_SHIFTER_HEADER), 12, UI_CONTENT_TOP + 438, 730);
     for (row = 0; row < FHW_SHIFTER_COUNT; row++) {
         int column = row / UI_SHIFTER_ROWS;
         int x = 12 + column * 375;
@@ -735,7 +843,7 @@ static void ui_build(void)
     }
 
     y = UI_FORCE_TOP;
-    ui_label(ui_text(T_FORCE_HEADER), 12, y, 720);
+    ui_header(ui_text(T_FORCE_HEADER), 12, y, 720);
     ui_label(ui_text(T_GAIN), 12, y + 26, 50);
     _snwprintf(number, UI_TEXT_CAPACITY, L"%d", ui_config.force_gain_percent);
     ui_control(L"EDIT", number, WS_BORDER | ES_NUMBER, 65, y + 26, 50, 24, ID_GAIN);
@@ -810,11 +918,19 @@ static LRESULT CALLBACK ui_procedure(HWND window, UINT message, WPARAM wparam, L
         } else if (wparam == UI_FORCE_TIMER) {
             KillTimer(window, UI_FORCE_TIMER);
             ui_set_force(0.0f);
+            ui_close_force();
         }
         return 0;
     case WM_CTLCOLORSTATIC:
-        SetBkMode((HDC)wparam, TRANSPARENT);
-        return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
+        return ui_color_static((HDC)wparam, (HWND)lparam);
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORLISTBOX:
+        return ui_color_field((HDC)wparam);
+    case WM_DRAWITEM:
+        if (((const DRAWITEMSTRUCT *)lparam)->CtlType != ODT_BUTTON)
+            break;
+        ui_draw_button((const DRAWITEMSTRUCT *)lparam);
+        return TRUE;
     case WM_DESTROY:
         ui_close_input(&ui_wheel);
         ui_close_input(&ui_pedals);
@@ -823,8 +939,16 @@ static LRESULT CALLBACK ui_procedure(HWND window, UINT message, WPARAM wparam, L
         PostQuitMessage(0);
         return 0;
     default:
-        return DefWindowProcW(window, message, wparam, lparam);
+        break;
     }
+    return DefWindowProcW(window, message, wparam, lparam);
+}
+
+static void ui_use_dark_title_bar(HWND window)
+{
+    BOOL dark = TRUE;
+
+    DwmSetWindowAttribute(window, UI_DARK_TITLE_ATTRIBUTE, &dark, sizeof(dark));
 }
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line, int show)
@@ -844,6 +968,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line, 
     metrics.cbSize = sizeof(metrics);
     SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0);
     ui_font = CreateFontIndirectW(&metrics.lfMessageFont);
+    metrics.lfMessageFont.lfWeight = FW_SEMIBOLD;
+    lstrcpynW(metrics.lfMessageFont.lfFaceName, UI_FONT_FACE_STRONG, LF_FACESIZE);
+    ui_header_font = CreateFontIndirectW(&metrics.lfMessageFont);
+    ui_background_brush = CreateSolidBrush(UI_COLOR_BACKGROUND);
+    ui_card_brush = CreateSolidBrush(UI_COLOR_CARD);
     fhw_config_load(&ui_config);
     fhw_raw_clear(&ui_wheel.state);
     fhw_raw_clear(&ui_pedals.state);
@@ -854,7 +983,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line, 
     window_class.lpfnWndProc = ui_procedure;
     window_class.hInstance = instance;
     window_class.hCursor = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
-    window_class.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
+    window_class.hbrBackground = ui_background_brush;
     window_class.lpszClassName = UI_WINDOW_CLASS;
     RegisterClassW(&window_class);
     AdjustWindowRect(&bounds, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
@@ -862,7 +991,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line, 
                                 WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                                 CW_USEDEFAULT, CW_USEDEFAULT, bounds.right - bounds.left, bounds.bottom - bounds.top,
                                 NULL, NULL, instance, NULL);
+    ui_use_dark_title_bar(ui_window);
     ui_build();
+    ui_preview = ui_preview_create(ui_window, instance, UI_FORM_WIDTH, UI_MARGIN, UI_PREVIEW_WIDTH,
+                                   UI_HEIGHT - 2 * UI_MARGIN);
     if (FAILED(DirectInput8Create(instance, DIRECTINPUT_VERSION, &IID_IDirectInput8W, (void **)&ui_directinput,
                                   NULL))) {
         MessageBoxW(ui_window, ui_text(T_NO_DIRECTINPUT), ui_text(T_TITLE), MB_ICONERROR);

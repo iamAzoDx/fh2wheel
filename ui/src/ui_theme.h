@@ -1,0 +1,28 @@
+#ifndef FHW_UI_THEME_H
+#define FHW_UI_THEME_H
+
+#include <windows.h>
+
+#define UI_COLOR_BACKGROUND RGB(0x0B, 0x0B, 0x10)
+#define UI_COLOR_CARD RGB(0x1E, 0x1E, 0x23)
+#define UI_COLOR_CARD_HOVER RGB(0x2A, 0x2A, 0x31)
+#define UI_COLOR_TRACK RGB(0x2A, 0x2A, 0x31)
+#define UI_COLOR_BORDER RGB(0x33, 0x33, 0x3D)
+#define UI_COLOR_TEXT RGB(0xF8, 0xFA, 0xFC)
+#define UI_COLOR_MUTED RGB(0x94, 0xA3, 0xB8)
+#define UI_COLOR_ACCENT RGB(0x3B, 0x82, 0xF6)
+#define UI_COLOR_ACCENT_PRESSED RGB(0x25, 0x63, 0xEB)
+#define UI_COLOR_THROTTLE RGB(0x22, 0xC5, 0x5E)
+#define UI_COLOR_BRAKE RGB(0xEF, 0x44, 0x44)
+#define UI_COLOR_CLUTCH RGB(0x3B, 0x82, 0xF6)
+#define UI_COLOR_HANDBRAKE RGB(0xF5, 0x9E, 0x0B)
+#define UI_COLOR_RIM RGB(0x2C, 0x2C, 0x34)
+#define UI_COLOR_RIM_EDGE RGB(0x4A, 0x4A, 0x56)
+#define UI_COLOR_SPOKE RGB(0x3A, 0x3A, 0x44)
+#define UI_COLOR_HUB RGB(0x24, 0x24, 0x2B)
+
+#define UI_FONT_FACE L"Segoe UI"
+#define UI_FONT_FACE_STRONG L"Segoe UI Semibold"
+#define UI_FONT_FACE_NUMBERS L"Consolas"
+
+#endif

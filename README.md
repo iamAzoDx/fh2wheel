@@ -64,7 +64,9 @@ Windows file and loads `fh2wheel.dll`. No game, emulator or Windows file is modi
 
 ### Step 2 — Set up your wheel
 
-Plug in your wheel, keep the game closed, and run **`fh2wheel-config.exe`**.
+Plug in your wheel, keep the game closed, and run **`fh2wheel-config.exe`**. The **Live preview** panel
+on the right shows what the game will get: a wheel that turns with yours, the pedals, the engaged gear and
+the Xbox buttons lighting up as you press them.
 
 1. **Wheel**: pick your wheel in the list (it only shows devices with force feedback). If your pedals,
    shifter or handbrake are separate USB devices, pick them under **Pedals**, **Shifter** and
