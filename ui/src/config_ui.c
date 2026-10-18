@@ -5,11 +5,12 @@
 #include <stdio.h>
 
 #include "config.h"
+#include "device_lists.h"
 #include "input_mapping.h"
 #include "ui_text.h"
 
 #define UI_WINDOW_CLASS L"fh2wheel-configuration"
-#define UI_DEVICE_CAPACITY 16
+#define UI_DEVICE_CAPACITY UI_DEVICE_LIST_CAPACITY
 #define UI_NAME_CAPACITY 128
 #define UI_TEXT_CAPACITY 160
 #define UI_POLL_TIMER 1
@@ -23,15 +24,17 @@
 #define UI_PERCENT 100.0f
 #define UI_BUTTON_ROWS 6
 #define UI_SHIFTER_ROWS 5
-#define UI_FORCE_TOP 700
+#define UI_CONTENT_TOP 112
+#define UI_FORCE_TOP (UI_CONTENT_TOP + 618)
 #define UI_PRESSED_MARK L"  ●"
 #define UI_WIDTH 760
-#define UI_HEIGHT 870
+#define UI_HEIGHT 900
 
 #define ID_WHEEL 100
 #define ID_PEDALS 101
 #define ID_REFRESH 102
 #define ID_SHIFTER 103
+#define ID_HANDBRAKE 104
 #define ID_AXIS_DETECT 200
 #define ID_AXIS_INVERT 220
 #define ID_BUTTON_ASSIGN 300
@@ -58,8 +61,6 @@ typedef enum {
 
 typedef struct {
     wchar_t name[UI_NAME_CAPACITY];
-    unsigned int vid;
-    unsigned int pid;
     GUID instance;
 } ui_device;
 
@@ -72,9 +73,13 @@ typedef struct {
 static HINSTANCE ui_instance;
 static HWND ui_window;
 static HFONT ui_font;
-static HWND ui_wheel_combo;
-static HWND ui_pedals_combo;
-static HWND ui_shifter_combo;
+static const int ui_role_ids[UI_ROLE_COUNT] = {ID_WHEEL, ID_PEDALS, ID_SHIFTER, ID_HANDBRAKE};
+static const ui_text_id ui_role_none_texts[UI_ROLE_COUNT] = {T_COUNT, T_PEDALS_NONE, T_SHIFTER_SAME,
+                                                             T_HANDBRAKE_NONE};
+static const ui_text_id ui_source_texts[FHW_SOURCE_COUNT] = {T_SOURCE_WHEEL, T_SOURCE_PEDALS, T_SOURCE_HANDBRAKE};
+static HWND ui_device_combo[UI_ROLE_COUNT];
+static int ui_combo_device[UI_ROLE_COUNT][UI_DEVICE_CAPACITY + 1];
+static int ui_selected[UI_ROLE_COUNT];
 static HWND ui_axis_mapping[UI_AXIS_ROWS];
 static HWND ui_axis_bar[UI_AXIS_ROWS];
 static HWND ui_axis_invert[UI_AXIS_ROWS];
@@ -83,21 +88,24 @@ static HWND ui_shifter_mapping[FHW_SHIFTER_COUNT];
 static HWND ui_status;
 static fhw_config ui_config;
 static ui_device ui_devices[UI_DEVICE_CAPACITY];
+static ui_device_info ui_device_infos[UI_DEVICE_CAPACITY];
 static int ui_device_count = 0;
 static LPDIRECTINPUT8W ui_directinput = NULL;
 static ui_input ui_wheel;
 static ui_input ui_pedals;
 static ui_input ui_shifter;
+static ui_input ui_handbrake;
 static fhw_force_effect ui_force;
 static LPDIRECTINPUTDEVICE8W ui_force_device = NULL;
 static ui_mode ui_current_mode = UI_MODE_IDLE;
 static int ui_target = 0;
 static DWORD ui_mode_started = 0;
-static fhw_raw_state ui_baseline_wheel;
-static fhw_raw_state ui_baseline_pedals;
+static fhw_raw_state ui_baseline[FHW_SOURCE_COUNT];
 static fhw_raw_state ui_baseline_shifter;
 static wchar_t ui_shown_mapping[FHW_BUTTON_COUNT][UI_TEXT_CAPACITY];
 static wchar_t ui_shown_shifter[FHW_SHIFTER_COUNT][UI_TEXT_CAPACITY];
+
+static void ui_refresh_axis_texts(void);
 
 static void ui_set_status(const wchar_t *text)
 {
@@ -126,11 +134,25 @@ static BOOL CALLBACK ui_collect_device(LPCDIDEVICEINSTANCEW instance, LPVOID con
     (void)context;
     if (ui_device_count >= UI_DEVICE_CAPACITY)
         return DIENUM_STOP;
-    device = &ui_devices[ui_device_count++];
+    device = &ui_devices[ui_device_count];
     lstrcpynW(device->name, instance->tszProductName, UI_NAME_CAPACITY);
-    device->vid = fhw_device_vid(instance);
-    device->pid = fhw_device_pid(instance);
     device->instance = instance->guidInstance;
+    ui_device_infos[ui_device_count].vid = fhw_device_vid(instance);
+    ui_device_infos[ui_device_count].pid = fhw_device_pid(instance);
+    ui_device_infos[ui_device_count].force_feedback = 0;
+    ui_device_count++;
+    return DIENUM_CONTINUE;
+}
+
+static BOOL CALLBACK ui_mark_force_feedback(LPCDIDEVICEINSTANCEW instance, LPVOID context)
+{
+    int index;
+
+    (void)context;
+    for (index = 0; index < ui_device_count; index++) {
+        if (IsEqualGUID(&ui_devices[index].instance, &instance->guidInstance))
+            ui_device_infos[index].force_feedback = 1;
+    }
     return DIENUM_CONTINUE;
 }
 
@@ -173,7 +195,7 @@ static int ui_open_input(ui_input *input, int device_index)
 
 static HRESULT ui_open_force(void)
 {
-    int wheel = (int)SendMessageW(ui_wheel_combo, CB_GETCURSEL, 0, 0);
+    int wheel = ui_selected[UI_ROLE_WHEEL];
     HRESULT result;
 
     if (ui_force.effect != NULL)
@@ -201,77 +223,121 @@ static int ui_find_device(unsigned int vid, unsigned int pid)
 {
     int index;
 
+    if (vid == 0)
+        return UI_NO_DEVICE;
     for (index = 0; index < ui_device_count; index++) {
-        if (ui_devices[index].vid == vid && ui_devices[index].pid == pid)
+        if (ui_device_infos[index].vid == vid && ui_device_infos[index].pid == pid)
             return index;
     }
-    return -1;
+    return UI_NO_DEVICE;
+}
+
+static void ui_store_device(int device, unsigned int *vid, unsigned int *pid)
+{
+    *vid = device != UI_NO_DEVICE ? ui_device_infos[device].vid : 0;
+    *pid = device != UI_NO_DEVICE ? ui_device_infos[device].pid : 0;
 }
 
 static void ui_open_selected(void)
 {
-    int wheel = (int)SendMessageW(ui_wheel_combo, CB_GETCURSEL, 0, 0);
-    int pedals = (int)SendMessageW(ui_pedals_combo, CB_GETCURSEL, 0, 0) - 1;
-    int shifter = (int)SendMessageW(ui_shifter_combo, CB_GETCURSEL, 0, 0) - 1;
     int opened;
 
-    if (wheel >= 0 && wheel < ui_device_count) {
-        ui_config.wheel_vid = ui_devices[wheel].vid;
-        ui_config.wheel_pid = ui_devices[wheel].pid;
-    }
-    if (pedals >= 0 && pedals < ui_device_count) {
-        ui_config.pedals_vid = ui_devices[pedals].vid;
-        ui_config.pedals_pid = ui_devices[pedals].pid;
-    } else {
-        ui_config.pedals_vid = 0;
-        ui_config.pedals_pid = 0;
-    }
-    if (shifter >= 0 && shifter < ui_device_count) {
-        ui_config.shifter_vid = ui_devices[shifter].vid;
-        ui_config.shifter_pid = ui_devices[shifter].pid;
-    } else {
-        ui_config.shifter_vid = 0;
-        ui_config.shifter_pid = 0;
-    }
-    opened = ui_open_input(&ui_wheel, wheel);
-    ui_open_input(&ui_pedals, pedals);
-    ui_open_input(&ui_shifter, shifter);
+    if (ui_selected[UI_ROLE_WHEEL] != UI_NO_DEVICE)
+        ui_store_device(ui_selected[UI_ROLE_WHEEL], &ui_config.wheel_vid, &ui_config.wheel_pid);
+    ui_store_device(ui_selected[UI_ROLE_PEDALS], &ui_config.pedals_vid, &ui_config.pedals_pid);
+    ui_store_device(ui_selected[UI_ROLE_SHIFTER], &ui_config.shifter_vid, &ui_config.shifter_pid);
+    ui_store_device(ui_selected[UI_ROLE_HANDBRAKE], &ui_config.handbrake_vid, &ui_config.handbrake_pid);
+    opened = ui_open_input(&ui_wheel, ui_selected[UI_ROLE_WHEEL]);
+    ui_open_input(&ui_pedals, ui_selected[UI_ROLE_PEDALS]);
+    ui_open_input(&ui_shifter, ui_selected[UI_ROLE_SHIFTER]);
+    ui_open_input(&ui_handbrake, ui_selected[UI_ROLE_HANDBRAKE]);
     ui_set_status(ui_text(opened ? T_WHEEL_OPENED : T_NO_WHEEL));
+}
+
+static void ui_fill_combos(void)
+{
+    wchar_t text[UI_TEXT_CAPACITY];
+    int choices[UI_DEVICE_CAPACITY];
+    int role;
+
+    for (role = 0; role < UI_ROLE_COUNT; role++) {
+        HWND combo = ui_device_combo[role];
+        int count = ui_role_choices(ui_device_infos, ui_device_count, ui_selected, (ui_role)role, choices);
+        int item = 0;
+        int index;
+
+        SendMessageW(combo, CB_RESETCONTENT, 0, 0);
+        SendMessageW(combo, CB_SETCURSEL, (WPARAM)-1, 0);
+        if (role != UI_ROLE_WHEEL) {
+            SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)ui_text(ui_role_none_texts[role]));
+            ui_combo_device[role][item++] = UI_NO_DEVICE;
+        }
+        for (index = 0; index < count; index++) {
+            const ui_device_info *info = &ui_device_infos[choices[index]];
+
+            _snwprintf(text, UI_TEXT_CAPACITY, L"%ls (%04X:%04X)", ui_devices[choices[index]].name, info->vid,
+                       info->pid);
+            text[UI_TEXT_CAPACITY - 1] = L'\0';
+            SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)text);
+            ui_combo_device[role][item++] = choices[index];
+        }
+        for (index = 0; index < item; index++) {
+            if (ui_combo_device[role][index] == ui_selected[role])
+                SendMessageW(combo, CB_SETCURSEL, (WPARAM)index, 0);
+        }
+    }
+}
+
+static void ui_read_from_wheel_when_same_device(ui_role role, fhw_source source)
+{
+    int index;
+
+    if (ui_selected[role] == UI_NO_DEVICE || ui_selected[role] != ui_selected[UI_ROLE_WHEEL])
+        return;
+    for (index = 0; index < FHW_PEDAL_COUNT; index++) {
+        if (ui_config.pedals[index].source == source)
+            ui_config.pedals[index].source = FHW_SOURCE_WHEEL;
+    }
 }
 
 static void ui_fill_devices(void)
 {
-    wchar_t text[UI_TEXT_CAPACITY];
-    int index;
-    int wheel;
-    int pedals;
-    int shifter;
-
     ui_close_input(&ui_wheel);
     ui_close_input(&ui_pedals);
     ui_close_input(&ui_shifter);
+    ui_close_input(&ui_handbrake);
     ui_device_count = 0;
     IDirectInput8_EnumDevices(ui_directinput, DI8DEVCLASS_GAMECTRL, ui_collect_device, NULL, DIEDFL_ATTACHEDONLY);
-    SendMessageW(ui_wheel_combo, CB_RESETCONTENT, 0, 0);
-    SendMessageW(ui_pedals_combo, CB_RESETCONTENT, 0, 0);
-    SendMessageW(ui_shifter_combo, CB_RESETCONTENT, 0, 0);
-    SendMessageW(ui_pedals_combo, CB_ADDSTRING, 0, (LPARAM)ui_text(T_PEDALS_NONE));
-    SendMessageW(ui_shifter_combo, CB_ADDSTRING, 0, (LPARAM)ui_text(T_SHIFTER_SAME));
-    for (index = 0; index < ui_device_count; index++) {
-        _snwprintf(text, UI_TEXT_CAPACITY, L"%ls (%04X:%04X)", ui_devices[index].name, ui_devices[index].vid,
-                   ui_devices[index].pid);
-        text[UI_TEXT_CAPACITY - 1] = L'\0';
-        SendMessageW(ui_wheel_combo, CB_ADDSTRING, 0, (LPARAM)text);
-        SendMessageW(ui_pedals_combo, CB_ADDSTRING, 0, (LPARAM)text);
-        SendMessageW(ui_shifter_combo, CB_ADDSTRING, 0, (LPARAM)text);
-    }
-    wheel = ui_find_device(ui_config.wheel_vid, ui_config.wheel_pid);
-    pedals = ui_config.pedals_vid != 0 ? ui_find_device(ui_config.pedals_vid, ui_config.pedals_pid) : -1;
-    shifter = ui_config.shifter_vid != 0 ? ui_find_device(ui_config.shifter_vid, ui_config.shifter_pid) : -1;
-    SendMessageW(ui_wheel_combo, CB_SETCURSEL, (WPARAM)wheel, 0);
-    SendMessageW(ui_pedals_combo, CB_SETCURSEL, (WPARAM)(pedals + 1), 0);
-    SendMessageW(ui_shifter_combo, CB_SETCURSEL, (WPARAM)(shifter + 1), 0);
+    IDirectInput8_EnumDevices(ui_directinput, DI8DEVCLASS_GAMECTRL, ui_mark_force_feedback, NULL,
+                              DIEDFL_ATTACHEDONLY | DIEDFL_FORCEFEEDBACK);
+    ui_selected[UI_ROLE_WHEEL] = ui_find_device(ui_config.wheel_vid, ui_config.wheel_pid);
+    ui_selected[UI_ROLE_PEDALS] = ui_find_device(ui_config.pedals_vid, ui_config.pedals_pid);
+    ui_selected[UI_ROLE_SHIFTER] = ui_find_device(ui_config.shifter_vid, ui_config.shifter_pid);
+    ui_selected[UI_ROLE_HANDBRAKE] = ui_find_device(ui_config.handbrake_vid, ui_config.handbrake_pid);
+    ui_read_from_wheel_when_same_device(UI_ROLE_PEDALS, FHW_SOURCE_PEDALS);
+    ui_read_from_wheel_when_same_device(UI_ROLE_HANDBRAKE, FHW_SOURCE_HANDBRAKE);
+    ui_drop_conflicts(ui_selected);
+    ui_fill_combos();
     ui_open_selected();
+    ui_refresh_axis_texts();
+}
+
+static void ui_select_device(int id)
+{
+    int role;
+    int item;
+
+    for (role = 0; role < UI_ROLE_COUNT; role++) {
+        if (ui_role_ids[role] != id)
+            continue;
+        item = (int)SendMessageW(ui_device_combo[role], CB_GETCURSEL, 0, 0);
+        if (item < 0)
+            return;
+        ui_selected[role] = ui_combo_device[role][item];
+        ui_fill_combos();
+        ui_open_selected();
+        return;
+    }
 }
 
 static fhw_pedal_mapping *ui_pedal_row(int row)
@@ -296,7 +362,7 @@ static void ui_refresh_axis_texts(void)
                 lstrcpynW(text, ui_text(T_NONE), UI_TEXT_CAPACITY);
             else
                 _snwprintf(text, UI_TEXT_CAPACITY, ui_text(T_AXIS_SOURCE_FORMAT), ui_axis_name(mapping->axis),
-                           ui_text(mapping->source == FHW_SOURCE_PEDALS ? T_SOURCE_PEDALS : T_SOURCE_WHEEL));
+                           ui_text(ui_source_texts[mapping->source]));
             SendMessageW(ui_axis_invert[row], BM_SETCHECK, mapping->inverted ? BST_CHECKED : BST_UNCHECKED, 0);
         }
         text[UI_TEXT_CAPACITY - 1] = L'\0';
@@ -340,6 +406,18 @@ static void ui_refresh_shifter_texts(unsigned int pressed)
             lstrcpyW(ui_shown_shifter[index], text);
             SetWindowTextW(ui_shifter_mapping[index], text);
         }
+    }
+}
+
+static ui_input *ui_source_input(fhw_source source)
+{
+    switch (source) {
+    case FHW_SOURCE_PEDALS:
+        return &ui_pedals;
+    case FHW_SOURCE_HANDBRAKE:
+        return &ui_handbrake;
+    default:
+        return &ui_wheel;
     }
 }
 
@@ -394,12 +472,13 @@ static int ui_poll(ui_input *input)
 static void ui_start_mode(ui_mode mode, int target)
 {
     wchar_t text[UI_TEXT_CAPACITY];
+    int source;
 
     ui_current_mode = mode;
     ui_target = target;
     ui_mode_started = GetTickCount();
-    ui_baseline_wheel = ui_wheel.state;
-    ui_baseline_pedals = ui_pedals.state;
+    for (source = 0; source < FHW_SOURCE_COUNT; source++)
+        ui_baseline[source] = ui_source_input((fhw_source)source)->state;
     ui_baseline_shifter = ui_shifter_source()->state;
     if (mode == UI_MODE_AXIS)
         _snwprintf(text, UI_TEXT_CAPACITY, ui_text(T_AXIS_PROMPT_FORMAT), ui_axis_label(target), ui_axis_hint(target));
@@ -433,20 +512,25 @@ static int ui_strongest_axis(const fhw_raw_state *now, const fhw_raw_state *base
 
 static void ui_detect_axis(void)
 {
-    long wheel_delta = 0;
-    long pedals_delta = 0;
-    int wheel_axis = ui_strongest_axis(&ui_wheel.state, &ui_baseline_wheel, &wheel_delta);
-    int pedals_axis = ui_pedals.valid ? ui_strongest_axis(&ui_pedals.state, &ui_baseline_pedals, &pedals_delta)
-                                      : FHW_AXIS_NONE;
     fhw_source source = FHW_SOURCE_WHEEL;
-    int axis = wheel_axis;
-    long delta = wheel_delta;
+    int axis = FHW_AXIS_NONE;
+    long delta = 0;
     wchar_t text[UI_TEXT_CAPACITY];
+    int candidate;
 
-    if (pedals_axis != FHW_AXIS_NONE && (axis == FHW_AXIS_NONE || labs(pedals_delta) > labs(wheel_delta))) {
-        source = FHW_SOURCE_PEDALS;
-        axis = pedals_axis;
-        delta = pedals_delta;
+    for (candidate = 0; candidate < FHW_SOURCE_COUNT; candidate++) {
+        ui_input *input = ui_source_input((fhw_source)candidate);
+        long candidate_delta = 0;
+        int candidate_axis;
+
+        if (!input->valid)
+            continue;
+        candidate_axis = ui_strongest_axis(&input->state, &ui_baseline[candidate], &candidate_delta);
+        if (candidate_axis != FHW_AXIS_NONE && (axis == FHW_AXIS_NONE || labs(candidate_delta) > labs(delta))) {
+            source = (fhw_source)candidate;
+            axis = candidate_axis;
+            delta = candidate_delta;
+        }
     }
     if (axis == FHW_AXIS_NONE)
         return;
@@ -506,7 +590,7 @@ static void ui_detect_button(void)
     wchar_t binding_text[UI_TEXT_CAPACITY];
     int shifter = ui_current_mode == UI_MODE_SHIFTER;
     int binding = shifter ? ui_new_binding(&ui_shifter_source()->state, &ui_baseline_shifter)
-                          : ui_new_binding(&ui_wheel.state, &ui_baseline_wheel);
+                          : ui_new_binding(&ui_wheel.state, &ui_baseline[FHW_SOURCE_WHEEL]);
 
     if (binding == FHW_BINDING_NONE)
         return;
@@ -532,6 +616,7 @@ static void ui_tick(void)
     int wheel_ok = ui_poll(&ui_wheel);
 
     ui_poll(&ui_pedals);
+    ui_poll(&ui_handbrake);
     if (!ui_poll(&ui_shifter) && !wheel_ok)
         return;
     if (ui_current_mode != UI_MODE_IDLE && GetTickCount() - ui_mode_started > UI_DETECT_TIMEOUT_MS) {
@@ -547,7 +632,9 @@ static void ui_tick(void)
     sources.wheel = &ui_wheel.state;
     sources.pedals = ui_pedals.valid ? &ui_pedals.state : NULL;
     sources.shifter = ui_shifter.valid ? &ui_shifter.state : NULL;
+    sources.handbrake = ui_handbrake.valid ? &ui_handbrake.state : NULL;
     fhw_map_input(&ui_config, &sources, &mapped);
+    fhw_map_handbrake(&ui_config, &mapped);
     SendMessageW(ui_axis_bar[0], PBM_SETPOS, (WPARAM)((mapped.steering + 1.0f) * UI_PROGRESS_MAX / 2.0f), 0);
     for (row = 1; row < UI_AXIS_ROWS; row++)
         SendMessageW(ui_axis_bar[row], PBM_SETPOS, (WPARAM)(mapped.pedals[row - 1] * UI_PROGRESS_MAX), 0);
@@ -597,16 +684,22 @@ static void ui_build(void)
     int y;
 
     ui_label(ui_text(T_WHEEL), 12, 12, 60);
-    ui_wheel_combo = ui_control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 75, 12, 300, 300, ID_WHEEL);
-    ui_label(ui_text(T_PEDALS), 390, 12, 65);
-    ui_pedals_combo = ui_control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 458, 12, 280, 300, ID_PEDALS);
+    ui_device_combo[UI_ROLE_WHEEL] =
+        ui_control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 75, 12, 300, 300, ID_WHEEL);
+    ui_label(ui_text(T_PEDALS), 380, 12, 75);
+    ui_device_combo[UI_ROLE_PEDALS] =
+        ui_control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 458, 12, 280, 300, ID_PEDALS);
     ui_control(L"BUTTON", ui_text(T_REFRESH), BS_PUSHBUTTON, 12, 44, 140, 26, ID_REFRESH);
-    ui_label(ui_text(T_SHIFTER), 390, 44, 65);
-    ui_shifter_combo = ui_control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 458, 44, 280, 300, ID_SHIFTER);
+    ui_label(ui_text(T_SHIFTER), 380, 44, 75);
+    ui_device_combo[UI_ROLE_SHIFTER] =
+        ui_control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 458, 44, 280, 300, ID_SHIFTER);
+    ui_label(ui_text(T_HANDBRAKE), 380, 76, 75);
+    ui_device_combo[UI_ROLE_HANDBRAKE] =
+        ui_control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 458, 76, 280, 300, ID_HANDBRAKE);
 
-    ui_label(ui_text(T_AXES_HEADER), 12, 82, 720);
+    ui_label(ui_text(T_AXES_HEADER), 12, UI_CONTENT_TOP, 720);
     for (row = 0; row < UI_AXIS_ROWS; row++) {
-        y = 108 + row * 32;
+        y = UI_CONTENT_TOP + 26 + row * 32;
         ui_label(ui_axis_label(row), 12, y, 110);
         ui_axis_mapping[row] = ui_label(L"", 125, y, 150);
         ui_axis_bar[row] = ui_control(PROGRESS_CLASSW, L"", PBS_SMOOTH, 280, y + 2, 250, 20, 0);
@@ -616,25 +709,25 @@ static void ui_build(void)
                                          ID_AXIS_INVERT + row);
     }
 
-    ui_label(ui_text(T_BUTTONS_HEADER), 12, 278, 720);
+    ui_label(ui_text(T_BUTTONS_HEADER), 12, UI_CONTENT_TOP + 196, 720);
     for (row = 0; row < FHW_BUTTON_COUNT; row++) {
         int column = row / UI_BUTTON_ROWS;
         int x = 12 + column * 375;
 
-        y = 304 + (row % UI_BUTTON_ROWS) * 30;
+        y = UI_CONTENT_TOP + 222 + (row % UI_BUTTON_ROWS) * 30;
         ui_label(ui_button_label((fhw_button)row), x, y, 100);
         ui_button_mapping[row] = ui_label(L"", x + 100, y, 120);
         ui_control(L"BUTTON", ui_text(T_ASSIGN), BS_PUSHBUTTON, x + 222, y, 75, 26, ID_BUTTON_ASSIGN + row);
         ui_control(L"BUTTON", ui_text(T_CLEAR), BS_PUSHBUTTON, x + 300, y, 60, 26, ID_BUTTON_CLEAR + row);
     }
-    ui_control(L"BUTTON", ui_text(T_DPAD_HAT), BS_AUTOCHECKBOX, 12, 486, 400, 20, ID_DPAD_HAT);
+    ui_control(L"BUTTON", ui_text(T_DPAD_HAT), BS_AUTOCHECKBOX, 12, UI_CONTENT_TOP + 404, 400, 20, ID_DPAD_HAT);
 
-    ui_label(ui_text(T_SHIFTER_HEADER), 12, 520, 730);
+    ui_label(ui_text(T_SHIFTER_HEADER), 12, UI_CONTENT_TOP + 438, 730);
     for (row = 0; row < FHW_SHIFTER_COUNT; row++) {
         int column = row / UI_SHIFTER_ROWS;
         int x = 12 + column * 375;
 
-        y = 546 + (row % UI_SHIFTER_ROWS) * 30;
+        y = UI_CONTENT_TOP + 464 + (row % UI_SHIFTER_ROWS) * 30;
         ui_label(ui_shifter_label((fhw_shifter_control)row), x, y, 100);
         ui_shifter_mapping[row] = ui_label(L"", x + 100, y, 120);
         ui_control(L"BUTTON", ui_text(T_ASSIGN), BS_PUSHBUTTON, x + 222, y, 75, 26, ID_SHIFTER_ASSIGN + row);
@@ -675,8 +768,9 @@ static void ui_command(int id, int notification)
 {
     if (id == ID_REFRESH) {
         ui_fill_devices();
-    } else if ((id == ID_WHEEL || id == ID_PEDALS || id == ID_SHIFTER) && notification == CBN_SELCHANGE) {
-        ui_open_selected();
+    } else if (notification == CBN_SELCHANGE &&
+               (id == ID_WHEEL || id == ID_PEDALS || id == ID_SHIFTER || id == ID_HANDBRAKE)) {
+        ui_select_device(id);
     } else if (id >= ID_AXIS_DETECT && id < ID_AXIS_DETECT + UI_AXIS_ROWS) {
         ui_start_mode(UI_MODE_AXIS, id - ID_AXIS_DETECT);
     } else if (id >= ID_AXIS_INVERT && id < ID_AXIS_INVERT + UI_AXIS_ROWS) {
@@ -725,6 +819,7 @@ static LRESULT CALLBACK ui_procedure(HWND window, UINT message, WPARAM wparam, L
         ui_close_input(&ui_wheel);
         ui_close_input(&ui_pedals);
         ui_close_input(&ui_shifter);
+        ui_close_input(&ui_handbrake);
         PostQuitMessage(0);
         return 0;
     default:
@@ -753,6 +848,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line, 
     fhw_raw_clear(&ui_wheel.state);
     fhw_raw_clear(&ui_pedals.state);
     fhw_raw_clear(&ui_shifter.state);
+    fhw_raw_clear(&ui_handbrake.state);
 
     ZeroMemory(&window_class, sizeof(window_class));
     window_class.lpfnWndProc = ui_procedure;

@@ -7,11 +7,12 @@
 #define SAMPLE_INI                                                                                            \
     "[General]\r\nEnabled=1\r\nRotationDegrees=540\r\nTrace=1\r\n"                                            \
     "[Devices]\r\nWheelVid=0x346E\r\nWheelPid=0x0002\r\nPedalsVid=0x1234\r\nPedalsPid=0x5678\r\n"             \
-    "ShifterVid=0x346E\r\nShifterPid=0x1001\r\n"                                                              \
+    "ShifterVid=0x346E\r\nShifterPid=0x1001\r\nHandbrakeVid=0x30B7\r\nHandbrakePid=0x1003\r\n"                \
     "[Shifter]\r\nGear1=21\r\nGear2=22\r\nGear6=26\r\nReverse=27\r\nShiftUp=HatRight\r\nShiftDown=31\r\n"     \
     "[Axes]\r\nSteering=X\r\nSteeringInverted=1\r\nThrottle=Z\r\nThrottleSource=Wheel\r\n"                    \
     "ThrottleInverted=0\r\nBrake=RZ\r\nBrakeSource=Wheel\r\nBrakeInverted=1\r\nClutch=Slider0\r\n"           \
-    "ClutchSource=Pedals\r\nClutchInverted=0\r\nHandbrake=None\r\n"                                           \
+    "ClutchSource=Pedals\r\nClutchInverted=0\r\nHandbrake=Slider1\r\nHandbrakeSource=Handbrake\r\n"             \
+    "HandbrakeButton=X\r\n"                                                                                 \
     "[Buttons]\r\nA=1\r\nB=2\r\nX=3\r\nY=4\r\nView=24\r\nMenu=37\r\nLeftPaddle=14\r\nRightPaddle=13\r\n"      \
     "DpadFromHat=0\r\nDpadUp=HatUp\r\nDpadDown=5\r\nDpadLeft=8\r\nDpadRight=7\r\n"                            \
     "[ForceFeedback]\r\nEnabled=1\r\nGainPercent=90\r\nInverted=1\r\nRateHz=250\r\n"
@@ -54,7 +55,10 @@ static void check_values(const fhw_config *config, const char *stage)
     CHECK(config->pedals[FHW_PEDAL_BRAKE].axis == FHW_AXIS_RZ && config->pedals[FHW_PEDAL_BRAKE].inverted, "brake");
     CHECK(config->pedals[FHW_PEDAL_CLUTCH].axis == FHW_AXIS_SLIDER0, "clutch axis");
     CHECK(config->pedals[FHW_PEDAL_CLUTCH].source == FHW_SOURCE_PEDALS, "clutch source");
-    CHECK(config->pedals[FHW_PEDAL_HANDBRAKE].axis == FHW_AXIS_NONE, "handbrake");
+    CHECK(config->pedals[FHW_PEDAL_HANDBRAKE].axis == FHW_AXIS_SLIDER1, "handbrake axis");
+    CHECK(config->pedals[FHW_PEDAL_HANDBRAKE].source == FHW_SOURCE_HANDBRAKE, "handbrake source");
+    CHECK(config->handbrake_vid == 0x30B7 && config->handbrake_pid == 0x1003, "handbrake device");
+    CHECK(config->handbrake_button == FHW_BUTTON_X, "handbrake button");
     CHECK(config->buttons[FHW_BUTTON_VIEW] == 24 && config->buttons[FHW_BUTTON_MENU] == 37, "view and menu");
     CHECK(config->buttons[FHW_BUTTON_UP] == FHW_BINDING_HAT_UP, "hat up");
     CHECK(config->dpad_from_hat == 0, "d-pad from hat");
@@ -80,6 +84,8 @@ static void test_defaults_when_missing(const wchar_t *path)
     expect("default rate", config.force_frequency_hz == 500);
     expect("no shifter by default", config.shifter_vid == 0 && config.shifter[FHW_SHIFTER_GEAR_1] == 0 &&
                                         config.shifter[FHW_SHIFTER_UP] == 0);
+    expect("handbrake on B by default", config.handbrake_button == FHW_BUTTON_B);
+    expect("no handbrake device by default", config.handbrake_vid == 0 && config.handbrake_pid == 0);
 }
 
 static void test_round_trip(const wchar_t *path)
@@ -107,10 +113,12 @@ static void test_out_of_range_values(const wchar_t *path)
     WritePrivateProfileStringW(L"General", L"RotationDegrees", L"5000", path);
     WritePrivateProfileStringW(L"ForceFeedback", L"RateHz", L"5", path);
     WritePrivateProfileStringW(L"Axes", L"Steering", L"Banana", path);
+    WritePrivateProfileStringW(L"Axes", L"HandbrakeButton", L"Banana", path);
     fhw_config_load(&config);
     expect("rotation clamped", config.rotation_degrees == 900);
     expect("rate clamped", config.force_frequency_hz == FHW_MIN_FREQUENCY_HZ);
     expect("unknown axis falls back", config.steering_axis == FHW_AXIS_X);
+    expect("unknown handbrake button falls back to B", config.handbrake_button == FHW_BUTTON_B);
 }
 
 int main(void)

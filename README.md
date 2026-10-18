@@ -66,12 +66,18 @@ Windows file and loads `fh2wheel.dll`. No game, emulator or Windows file is modi
 
 Plug in your wheel, keep the game closed, and run **`fh2wheel-config.exe`**.
 
-1. **Wheel**: pick your wheel in the list. If your pedals are a separate USB device, pick them under
-   **Pedals**. Otherwise leave “None”.
+1. **Wheel**: pick your wheel in the list (it only shows devices with force feedback). If your pedals,
+   shifter or handbrake are separate USB devices, pick them under **Pedals**, **Shifter** and
+   **Handbrake**. Otherwise leave “None” / “On the wheel”. A device chosen in one list is hidden from the
+   others.
 2. **Steering**: click **Detect**, then turn the wheel to the **right**. Check that the bar moves to the
    right when you turn right. If not, tick **Invert**.
 3. **Throttle, Brake, Clutch, Handbrake**: click **Detect**, then press the pedal all the way. Each bar
    must fill up when you press its pedal.
+   - **Handbrake**: the game has no handbrake axis for wheels, so pulling the handbrake past 30 % presses
+     **B**, the game's handbrake button for wheels (A is the clutch); the ● next to B lights up. To use
+     another button, set `HandbrakeButton=X` (or Y, A…) under `[Axes]` in `data\fh2wheel.ini`. A USB handbrake is picked under
+     **Handbrake** at the top; **Detect** then reads it like the wheel and the pedals.
 4. **Buttons**: for each Xbox control (A, B, X, Y, View, Menu, D-pad, paddles), click **Assign** and press
    the wheel button you want. A ● appears next to a control while its button is pressed.
 5. **Shifter** (optional): if you have a shifter, pick it under **Shifter** when it is a separate USB
@@ -120,6 +126,7 @@ the wheel feels heavy or slow to return to the center.
 | No force feedback | Run `fh2wheel-config.exe` with the game closed and use the force tests. Keep the game window focused while playing. |
 | Wrong buttons or inverted pedals | Run `fh2wheel-config.exe` again and use **Detect** / **Assign**. |
 | The H-pattern shifter does nothing | Pick a manual transmission with clutch in the game options. With trace on, the log's `loop:` lines show the gear fh2wheel sends (`gear 255` = reverse). |
+| The handbrake does nothing | Check that the ● next to B lights up in `fh2wheel-config.exe` when you pull it. If the game uses another button for the handbrake, set `HandbrakeButton` to it. |
 | Something else | Tick **Detailed log (trace)**, save, play for a minute, then open an issue with `data\logs\fh2wheel.log`. |
 
 `fh2wheel-probe.exe` (console) helps with diagnosis:

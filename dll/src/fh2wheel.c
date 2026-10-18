@@ -11,7 +11,7 @@
 #include "wheel_controller.h"
 
 #define FHW_VERSION_MAJOR 1u
-#define FHW_VERSION_MINOR 2u
+#define FHW_VERSION_MINOR 3u
 #define FHW_VERSION_SHIFT 16
 #define FHW_ACTIVATION_STEP "activation: IAT slot 141DD1330 hook"
 #define FHW_ADDRESS_DESCRIPTION_CAPACITY 160

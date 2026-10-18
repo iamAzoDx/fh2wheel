@@ -27,9 +27,10 @@ static void expect_true(const char *what, int condition)
 static void map(const fhw_config *config, const fhw_raw_state *wheel, const fhw_raw_state *pedals,
                 const fhw_raw_state *shifter, fhw_wheel_input *input)
 {
-    fhw_raw_sources sources = {wheel, pedals, shifter};
+    fhw_raw_sources sources = {wheel, pedals, shifter, NULL};
 
     fhw_map_input(config, &sources, input);
+    fhw_map_handbrake(config, input);
 }
 
 static void base_config(fhw_config *config)
@@ -259,6 +260,94 @@ static void test_pedals_untouched_since_start(void)
     expect_near("untouched brake still released", input.pedals[FHW_PEDAL_BRAKE], 0.0f);
 }
 
+static void test_handbrake_presses_a_button(void)
+{
+    fhw_config config;
+    fhw_raw_state wheel;
+    fhw_raw_state pedals;
+    fhw_wheel_input input;
+
+    base_config(&config);
+    config.buttons[FHW_BUTTON_A] = 0;
+    config.pedals[FHW_PEDAL_HANDBRAKE].axis = FHW_AXIS_SLIDER1;
+    config.pedals[FHW_PEDAL_HANDBRAKE].source = FHW_SOURCE_PEDALS;
+    fhw_raw_clear(&wheel);
+    fhw_raw_clear(&pedals);
+
+    pedals.axes[FHW_AXIS_SLIDER1] = FHW_RAW_AXIS_MAX / 5;
+    map(&config, &wheel, &pedals, NULL, &input);
+    expect_true("handbrake barely pulled -> A released", !((input.buttons >> FHW_BUTTON_A) & 1u));
+
+    pedals.axes[FHW_AXIS_SLIDER1] = FHW_RAW_AXIS_MAX;
+    map(&config, &wheel, &pedals, NULL, &input);
+    expect_true("handbrake pulled -> configured button (A)", (input.buttons >> FHW_BUTTON_A) & 1u);
+    expect_near("handbrake value kept", input.pedals[FHW_PEDAL_HANDBRAKE], 1.0f);
+
+    config.handbrake_button = FHW_BUTTON_B;
+    map(&config, &wheel, &pedals, NULL, &input);
+    expect_true("handbrake on another button", (input.buttons >> FHW_BUTTON_B) & 1u);
+    expect_true("A no longer pressed", !((input.buttons >> FHW_BUTTON_A) & 1u));
+
+    map(&config, &wheel, NULL, NULL, &input);
+    expect_true("handbrake device missing -> nothing pressed", !((input.buttons >> FHW_BUTTON_B) & 1u));
+}
+
+static void test_handbrake_on_its_own_device(void)
+{
+    fhw_config config;
+    fhw_raw_state wheel;
+    fhw_raw_state handbrake;
+    fhw_raw_sources sources;
+    fhw_wheel_input input;
+
+    base_config(&config);
+    config.buttons[FHW_BUTTON_A] = 0;
+    config.pedals[FHW_PEDAL_HANDBRAKE].axis = FHW_AXIS_Y;
+    config.pedals[FHW_PEDAL_HANDBRAKE].source = FHW_SOURCE_HANDBRAKE;
+    fhw_raw_clear(&wheel);
+    fhw_raw_clear(&handbrake);
+    wheel.axes[FHW_AXIS_Y] = FHW_RAW_AXIS_MAX;
+    handbrake.axes[FHW_AXIS_Y] = FHW_RAW_AXIS_MAX / 2;
+    sources.wheel = &wheel;
+    sources.pedals = NULL;
+    sources.shifter = NULL;
+    sources.handbrake = &handbrake;
+
+    fhw_map_input(&config, &sources, &input);
+    fhw_map_handbrake(&config, &input);
+    expect_near("handbrake read from its own device", input.pedals[FHW_PEDAL_HANDBRAKE], 0.5f);
+    expect_true("handbrake device pulled -> A", (input.buttons >> FHW_BUTTON_A) & 1u);
+
+    sources.handbrake = NULL;
+    fhw_map_input(&config, &sources, &input);
+    expect_near("handbrake device missing -> released", input.pedals[FHW_PEDAL_HANDBRAKE], 0.0f);
+}
+
+static void test_untouched_handbrake_does_not_press(void)
+{
+    fhw_config config;
+    fhw_raw_state wheel;
+    fhw_raw_sources sources;
+    fhw_wheel_input input;
+    fhw_pedal_rest rest;
+
+    base_config(&config);
+    config.buttons[FHW_BUTTON_A] = 0;
+    config.pedals[FHW_PEDAL_HANDBRAKE].axis = FHW_AXIS_SLIDER1;
+    fhw_raw_clear(&wheel);
+    wheel.axes[FHW_AXIS_SLIDER1] = FHW_RAW_AXIS_MAX / 2;
+    sources.wheel = &wheel;
+    sources.pedals = NULL;
+    sources.shifter = NULL;
+    sources.handbrake = NULL;
+    fhw_pedal_rest_reset(&rest);
+
+    fhw_map_input(&config, &sources, &input);
+    fhw_pedal_rest_apply(&rest, &input);
+    fhw_map_handbrake(&config, &input);
+    expect_true("handbrake stuck half-way at start -> A released", !((input.buttons >> FHW_BUTTON_A) & 1u));
+}
+
 int main(void)
 {
     test_axes();
@@ -269,6 +358,9 @@ int main(void)
     test_sequential_shifter();
     test_shifter_capabilities();
     test_pedals_untouched_since_start();
+    test_handbrake_presses_a_button();
+    test_untouched_handbrake_does_not_press();
+    test_handbrake_on_its_own_device();
     if (failures != 0) {
         printf("test_input_mapping: %d failure(s)\n", failures);
         return 1;

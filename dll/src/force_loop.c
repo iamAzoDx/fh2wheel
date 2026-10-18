@@ -139,10 +139,10 @@ static DWORD WINAPI fhw_force_thread(LPVOID parameter)
             deadline = fhw_vm_instance.shared[FHW_HEARTBEAT_REGISTER];
             fhw_force_unlock();
             fhw_log_format("loop: %lu cycles, steering %.3f, throttle %.2f, brake %.2f, clutch %.2f, "
-                           "buttons %03X, gear %u, peak force %.3f (effect %d), Torque %.3f, menu spring %.3f, "
+                           "handbrake %.2f, buttons %03X, gear %u, peak force %.3f (effect %d), Torque %.3f, menu spring %.3f, "
                            "heartbeat %+.0f ms",
                            ticks, input.steering, input.pedals[FHW_PEDAL_THROTTLE], input.pedals[FHW_PEDAL_BRAKE],
-                           input.pedals[FHW_PEDAL_CLUTCH], input.buttons, (unsigned int)input.gear, peak,
+                           input.pedals[FHW_PEDAL_CLUTCH], input.pedals[FHW_PEDAL_HANDBRAKE], input.buttons, (unsigned int)input.gear, peak,
                            fhw_device_has_force(), torque, menu_spring, deadline - now);
             peak = 0.0f;
             next_trace = now + FHW_TRACE_INTERVAL_MS;

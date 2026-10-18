@@ -29,7 +29,9 @@ typedef enum {
 
 typedef enum {
     FHW_SOURCE_WHEEL,
-    FHW_SOURCE_PEDALS
+    FHW_SOURCE_PEDALS,
+    FHW_SOURCE_HANDBRAKE,
+    FHW_SOURCE_COUNT
 } fhw_source;
 
 typedef enum {
@@ -86,9 +88,12 @@ typedef struct {
     unsigned int pedals_pid;
     unsigned int shifter_vid;
     unsigned int shifter_pid;
+    unsigned int handbrake_vid;
+    unsigned int handbrake_pid;
     fhw_axis steering_axis;
     int steering_inverted;
     fhw_pedal_mapping pedals[FHW_PEDAL_COUNT];
+    fhw_button handbrake_button;
     int buttons[FHW_BUTTON_COUNT];
     int dpad_from_hat;
     int shifter[FHW_SHIFTER_COUNT];

@@ -99,7 +99,14 @@ program, `L0..L3` shared, `Lt` time in ms, `Et` time since the program was enabl
    engaged gear, `255` for reverse, `0` when none. Slot 30 reports a shifter once any gear is assigned,
    and slot 31 the highest assigned gear. Sequential shift up/down buttons are added to the right/left
    paddles.
-6. **DirectInput** — the wheel is read with a shared, background access. Forces go through a second,
+6. **Handbrake** — the game's state function never reads reading slots 21–23 or 27, and no slot carries a
+   handbrake: on the wheel path it only reads slots 16, 18–20, 24–26, 32 and 33 for the axes. A handbrake
+   axis (from the wheel, the pedals or its own USB device, `HandbrakeVid`/`HandbrakePid`) pulled past
+   30 % therefore presses an Xbox button (`HandbrakeButton`, B by default: in game, with a wheel, B is the handbrake
+   and A the clutch, tested on 2026-10-18). Pedals that
+   have not moved since start-up count as released before this test (Logitech wheels report them
+   half-pressed).
+7. **DirectInput** — the wheel is read with a shared, background access. Forces go through a second,
    **exclusive foreground** access tied to the game window: some wheels (the Moza R9 among them) silently
    ignore forces from a background application, and stop the effect without any error when another window
    takes the focus. fh2wheel releases the wheel when the game loses focus, takes it back when it regains

@@ -57,6 +57,9 @@ typedef enum {
     T_SHIFTER_SAME,
     T_SHIFTER_HEADER,
     T_SHIFTER_PROMPT_FORMAT,
+    T_HANDBRAKE,
+    T_HANDBRAKE_NONE,
+    T_SOURCE_HANDBRAKE,
     T_COUNT
 } ui_text_id;
 

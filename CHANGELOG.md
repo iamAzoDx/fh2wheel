@@ -2,6 +2,23 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3] - 2026-10-18
+
+### Added
+
+- Handbrake support. The game has no handbrake axis for wheels, so pulling the handbrake past 30 %
+  presses **B**, the game's handbrake button with a wheel (A is the clutch). Another button can be set
+  with `HandbrakeButton` under `[Axes]` in `data\fh2wheel.ini`.
+- A USB handbrake can be its own device: new **Handbrake** list in `fh2wheel-config.exe`
+  (`HandbrakeVid`/`HandbrakePid` in `[Devices]`).
+- The trace log shows the handbrake value.
+
+### Changed
+
+- Device lists in `fh2wheel-config.exe`: **Wheel** only shows force feedback devices, and a device chosen
+  in one list is hidden from the others. Pedals or a handbrake set to the wheel's own device become
+  "None" and their axes are read from the wheel.
+
 ## [1.2] - 2026-10-18
 
 ### Added

@@ -19,6 +19,7 @@ typedef struct {
     const fhw_raw_state *wheel;
     const fhw_raw_state *pedals;
     const fhw_raw_state *shifter;
+    const fhw_raw_state *handbrake;
 } fhw_raw_sources;
 
 typedef struct {
@@ -41,6 +42,7 @@ int fhw_binding_pressed(const fhw_raw_state *state, int binding);
 int fhw_has_pattern_shifter(const fhw_config *config);
 unsigned char fhw_highest_gear(const fhw_config *config);
 void fhw_map_input(const fhw_config *config, const fhw_raw_sources *sources, fhw_wheel_input *input);
+void fhw_map_handbrake(const fhw_config *config, fhw_wheel_input *input);
 void fhw_pedal_rest_reset(fhw_pedal_rest *rest);
 void fhw_pedal_rest_apply(fhw_pedal_rest *rest, fhw_wheel_input *input);
 

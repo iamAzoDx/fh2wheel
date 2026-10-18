@@ -50,6 +50,9 @@ static const wchar_t *const ui_texts[T_COUNT] = {
     [T_SHIFTER_HEADER] = L"SHIFTER — click “Assign”, then engage the gear or press the button. Shift up/down add to "
                          L"the paddles.",
     [T_SHIFTER_PROMPT_FORMAT] = L"%ls: engage the gear or press the shifter button to use…",
+    [T_HANDBRAKE] = L"Handbrake:",
+    [T_HANDBRAKE_NONE] = L"None (on the wheel or pedals)",
+    [T_SOURCE_HANDBRAKE] = L"handbrake",
 };
 static const wchar_t *const ui_shifter_labels[FHW_SHIFTER_COUNT] = {
     L"Gear 1", L"Gear 2", L"Gear 3", L"Gear 4", L"Gear 5", L"Gear 6", L"Gear 7", L"Reverse", L"Shift up",

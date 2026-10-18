@@ -41,6 +41,7 @@ static LPDIRECTINPUT8W fhw_input = NULL;
 static fhw_input_device fhw_wheel = {0};
 static fhw_input_device fhw_pedals = {0};
 static fhw_input_device fhw_shifter = {0};
+static fhw_input_device fhw_handbrake = {0};
 static fhw_pedal_rest fhw_pedals_at_rest;
 static fhw_force_device fhw_force_owner = {0};
 static fhw_force_effect fhw_force;
@@ -256,6 +257,7 @@ int fhw_device_open(const fhw_config *config, void *module)
     }
     fhw_raw_clear(&fhw_pedals.state);
     fhw_raw_clear(&fhw_shifter.state);
+    fhw_raw_clear(&fhw_handbrake.state);
     fhw_pedal_rest_reset(&fhw_pedals_at_rest);
     if (!fhw_open_input(&fhw_wheel, "wheel", config->wheel_vid, config->wheel_pid))
         return 0;
@@ -263,6 +265,8 @@ int fhw_device_open(const fhw_config *config, void *module)
         fhw_open_input(&fhw_pedals, "pedals", config->pedals_vid, config->pedals_pid);
     if (config->shifter_vid != 0)
         fhw_open_input(&fhw_shifter, "shifter", config->shifter_vid, config->shifter_pid);
+    if (config->handbrake_vid != 0)
+        fhw_open_input(&fhw_handbrake, "handbrake", config->handbrake_vid, config->handbrake_pid);
     if (config->force_enabled)
         fhw_open_force_device(config->wheel_vid, config->wheel_pid);
     return 1;
@@ -297,8 +301,10 @@ int fhw_device_poll(fhw_wheel_input *input)
     sources.wheel = &fhw_wheel.state;
     sources.pedals = fhw_read_state(&fhw_pedals) ? &fhw_pedals.state : NULL;
     sources.shifter = fhw_read_state(&fhw_shifter) ? &fhw_shifter.state : NULL;
+    sources.handbrake = fhw_read_state(&fhw_handbrake) ? &fhw_handbrake.state : NULL;
     fhw_map_input(&fhw_device_config, &sources, input);
     fhw_pedal_rest_apply(&fhw_pedals_at_rest, input);
+    fhw_map_handbrake(&fhw_device_config, input);
     return 1;
 }
 
@@ -350,6 +356,7 @@ void fhw_device_close(void)
         IDirectInputDevice8_Release(fhw_force_owner.device);
         fhw_force_owner.device = NULL;
     }
+    fhw_release_input(&fhw_handbrake);
     fhw_release_input(&fhw_shifter);
     fhw_release_input(&fhw_pedals);
     fhw_release_input(&fhw_wheel);

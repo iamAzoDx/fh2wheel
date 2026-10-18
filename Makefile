@@ -15,7 +15,7 @@ PROXY_DEF := $(GENERATED_DIR)/d3dcompiler.def
 PROXY_SOURCES := proxy/src/d3dcompiler_proxy.c dll/src/log.c
 PROXY_TARGET := $(BUILD_DIR)/$(PROXY_LIBRARY)
 PROBE_TARGET := $(BUILD_DIR)/fh2wheel-probe.exe
-UI_SOURCES := ui/src/config_ui.c ui/src/ui_text.c dll/src/config.c dll/src/log.c dll/src/input_mapping.c \
+UI_SOURCES := ui/src/config_ui.c ui/src/ui_text.c ui/src/device_lists.c dll/src/config.c dll/src/log.c dll/src/input_mapping.c \
 	dll/src/dinput_state.c
 UI_HEADERS := $(wildcard ui/src/*.h)
 UI_TARGET := $(BUILD_DIR)/fh2wheel-config.exe
@@ -30,6 +30,7 @@ RELEASE_FILES := $(DLL_TARGET) $(PROXY_TARGET) $(UI_TARGET) $(PROBE_TARGET) $(PU
 VM_TEST_TARGET := $(BUILD_DIR)/test_ffb_vm
 MAPPING_TEST_TARGET := $(BUILD_DIR)/test_input_mapping
 UI_TEXT_TEST_TARGET := $(BUILD_DIR)/test_ui_text
+DEVICE_LISTS_TEST_TARGET := $(BUILD_DIR)/test_device_lists
 CONFIG_TEST_TARGET := $(BUILD_DIR)/test_config.exe
 WINDOWS_TEST_SCRIPT := scripts/test-windows.ps1
 PYTHON_SOURCES := $(wildcard tools/*.py tests/unit/*.py)
@@ -76,6 +77,10 @@ $(UI_TEXT_TEST_TARGET): tests/unit/test_ui_text.c ui/src/ui_text.c $(UI_HEADERS)
 	@mkdir -p $(BUILD_DIR)
 	$(HOST_CC) $(HOST_CFLAGS) -I dll/src -I ui/src -o $@ tests/unit/test_ui_text.c ui/src/ui_text.c
 
+$(DEVICE_LISTS_TEST_TARGET): tests/unit/test_device_lists.c ui/src/device_lists.c ui/src/device_lists.h
+	@mkdir -p $(BUILD_DIR)
+	$(HOST_CC) $(HOST_CFLAGS) -I ui/src -o $@ tests/unit/test_device_lists.c ui/src/device_lists.c
+
 $(CONFIG_TEST_TARGET): tests/windows/test_config.c dll/src/config.c dll/src/log.c $(DLL_HEADERS)
 	@mkdir -p $(BUILD_DIR)
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -I dll/src -o $@ tests/windows/test_config.c dll/src/config.c dll/src/log.c
@@ -83,10 +88,11 @@ $(CONFIG_TEST_TARGET): tests/windows/test_config.c dll/src/config.c dll/src/log.
 lint:
 	$(PYTHON) -m py_compile $(PYTHON_SOURCES)
 
-test: $(VM_TEST_TARGET) $(MAPPING_TEST_TARGET) $(UI_TEXT_TEST_TARGET)
+test: $(VM_TEST_TARGET) $(MAPPING_TEST_TARGET) $(UI_TEXT_TEST_TARGET) $(DEVICE_LISTS_TEST_TARGET)
 	./$(VM_TEST_TARGET)
 	./$(MAPPING_TEST_TARGET)
 	./$(UI_TEXT_TEST_TARGET)
+	./$(DEVICE_LISTS_TEST_TARGET)
 	$(PYTHON) -m unittest discover -s tests/unit -p 'test_*.py' -v
 
 windows-test: build

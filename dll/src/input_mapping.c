@@ -9,6 +9,7 @@
 #define FHW_HAT_EIGHTH 4500ul
 #define FHW_BUTTON_PRESSED 0x80
 #define FHW_PEDAL_WAKE_DELTA 0.05f
+#define FHW_HANDBRAKE_PULLED 0.3f
 
 void fhw_raw_clear(fhw_raw_state *state)
 {
@@ -110,13 +111,31 @@ static void fhw_map_shifter(const fhw_config *config, const fhw_raw_state *shift
         input->buttons |= 1u << FHW_BUTTON_PADDLE_LEFT;
 }
 
+static const fhw_raw_state *fhw_axis_source(const fhw_raw_sources *sources, fhw_source source)
+{
+    switch (source) {
+    case FHW_SOURCE_PEDALS:
+        return sources->pedals;
+    case FHW_SOURCE_HANDBRAKE:
+        return sources->handbrake;
+    default:
+        return sources->wheel;
+    }
+}
+
+void fhw_map_handbrake(const fhw_config *config, fhw_wheel_input *input)
+{
+    if ((unsigned int)config->handbrake_button < FHW_BUTTON_COUNT &&
+        input->pedals[FHW_PEDAL_HANDBRAKE] > FHW_HANDBRAKE_PULLED)
+        input->buttons |= 1u << config->handbrake_button;
+}
+
 void fhw_map_input(const fhw_config *config, const fhw_raw_sources *sources, fhw_wheel_input *input)
 {
     static const int fhw_hat_dpad[] = {FHW_BINDING_HAT_UP, FHW_BINDING_HAT_DOWN, FHW_BINDING_HAT_LEFT,
                                        FHW_BINDING_HAT_RIGHT};
     static const fhw_button fhw_dpad_buttons[] = {FHW_BUTTON_UP, FHW_BUTTON_DOWN, FHW_BUTTON_LEFT, FHW_BUTTON_RIGHT};
     const fhw_raw_state *wheel = sources->wheel;
-    const fhw_raw_state *pedals = sources->pedals;
     unsigned int index;
 
     input->steering = 0.0f;
@@ -128,7 +147,7 @@ void fhw_map_input(const fhw_config *config, const fhw_raw_sources *sources, fhw
 
     for (index = 0; index < FHW_PEDAL_COUNT; index++) {
         const fhw_pedal_mapping *mapping = &config->pedals[index];
-        const fhw_raw_state *source = mapping->source == FHW_SOURCE_PEDALS ? pedals : wheel;
+        const fhw_raw_state *source = fhw_axis_source(sources, mapping->source);
         float value;
 
         if (mapping->axis == FHW_AXIS_NONE || source == NULL) {
