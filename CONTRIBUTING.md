@@ -21,9 +21,8 @@ make check          # build + unit tests (+ Windows tests when Windows is reacha
 make release        # release zip in build/
 ```
 
-On Windows, `scripts\test-windows.ps1` runs the tests that need Windows, and
-`scripts\install.ps1 -Azimuth <folder>` / `scripts\uninstall.ps1 -Azimuth <folder>` copy or remove the
-built files next to `azimuth.exe`.
+On Windows, `scripts\test-windows.ps1` runs the tests that need Windows. To try a build, copy
+`D3DCOMPILER_47.dll`, `fh2wheel.dll` and `fh2wheel-config.exe` from `build\` next to `azimuth.exe`.
 
 ## Code layout
 
